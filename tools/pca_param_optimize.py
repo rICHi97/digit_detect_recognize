@@ -44,14 +44,14 @@ for _ in imgs:
             all_recs.append(rec)
         pca_, new_rec_data_list = PCA_(all_recs, width, height)
         # rec_i - rec_i-1， cnt - 1个数据
-        delta_one_rec_data_list = get_delta_rec_list(1, new_rec_data_list)
+        # delta_one_rec_data_list = get_delta_rec_list(1, new_rec_data_list)
         # rec_i - rec_i-2， cnt - 2个数据
-        delta_two_rec_data_list = get_delta_rec_list(2, new_rec_data_list)
-        avg_delta_one_rec = sum(delta_one_rec_data_list) / len(delta_one_rec_data_list)
-        avg_delta_two_rec = sum(delta_two_rec_data_list) / len(delta_two_rec_data_list)
-        tdt, rec_group_list, avg_after_filter, std = divide_rec_list(avg_delta_one_rec, avg_delta_two_rec, new_rec_data_list)
+        # delta_two_rec_data_list = get_delta_rec_list(2, new_rec_data_list)
+        # avg_delta_one_rec = sum(delta_one_rec_data_list) / len(delta_one_rec_data_list)
+        # avg_delta_two_rec = sum(delta_two_rec_data_list) / len(delta_two_rec_data_list)
+        tdt, rec_group_list, avg_after_filter, std = divide_rec_list(new_rec_data_list)
 
-        draw.text((0, 0), '%f'%(avg_delta_one_rec), fill = 'black', font = draw_font)
+        # draw.text((0, 0), '%f'%(avg_delta_one_rec), fill = 'black', font = draw_font)
         draw.text((100, 0), '%f'%(avg_after_filter), fill = 'blue', font = draw_font)
         draw.text((200, 0), '%f'%(std), fill = 'red', font = draw_font)
         draw.text((200, 200), '%s'%(tdt), fill = 'yellow', font = draw_font)
