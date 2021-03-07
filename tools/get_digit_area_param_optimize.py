@@ -33,7 +33,7 @@ for _ in imgs:
     width, height = img.width, img.height
     draw = ImageDraw.Draw(img)
     img_name = _.split('.')[0]
-    # if img_name != '1_original':
+    # if img_name != 'terminal_8_original':
     #     continue
     img_recs_txt = img_name + '.txt'
     recs_all = []
