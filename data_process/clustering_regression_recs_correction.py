@@ -464,6 +464,20 @@ def DBSCAN_(recs_all):
     # return LOF_data
     return DBSCAN_data, rec_data_list
 
+# x坐标和y坐标的预回归
+def _pre_regression_on_center_x_y(center_x_list, center_y_list):
+    delta_x = (max(center_x_list) - min(center_x_list))
+    delta_y = (max(center_y_list) - min(center_y_list))
+    ratio = [(tmp_y - center_y_list[0]) / delta_y for tmp_y in center_y_list]
+    var_x = np.array(center_x_list).T.reshape(-1, 1)
+    var_y = np.array(center_y_list)
+    reg = LinearRegression().fit(var_x, var_y)
+    k = reg.coef_[0]
+    if k > 0:
+        new_center_x_list = [min(center_x_list) + tmp_ratio * delta_x for tmp_ratio in ratio]
+    else:
+        new_center_x_list = [max(center_x_list) - tmp_ratio * delta_x for tmp_ratio in ratio]
+    return new_center_x_list
 # 回归
 def regression_(recs_all):
     np.set_printoptions(suppress=True)
@@ -476,24 +490,6 @@ def regression_(recs_all):
     center_x_list, center_y_list = [], []
     length_W_list, length_H_list = [], []
     rotate_angle_W_list, rotate_angle_H_list = [], []
-    # rec_data_list = []
-    # if center_x_flag:
-    #     rec_data_list.append(center_x_list)
-    # if center_y_flag:
-    #     rec_data_list.append(center_y_list)
-    # if length_W_flag:
-    #     rec_data_list.append(length_W_list)
-    # if length_H_flag:
-    #     rec_data_list.append(length_H_list)
-    # if rotate_angle_W_flag:
-    #     rec_data_list.append(rotate_angle_W_list)
-    # if rotate_angle_H_flag:
-    #     rec_data_list.append(rotate_angle_H_list)
-    # cnt_data_categories = len(rec_data_list)   
-    # X_var_list = [center_x_list, center_y_list]
-    # y_var1_list = [length_W_list]
-    # y_var2_list = [rotate_angle_W_list]
-    # 填充rec信息
     for i in range(cnt_recs):
         reordered_rec, _ = reorder_rec(recs_all[i])
         rec_data = generate_rec_data(reordered_rec)
@@ -515,30 +511,29 @@ def regression_(recs_all):
     # rec_data_list = np.array(rec_data_list).T
     # TODO:当接近垂直排布时，x的坐标非常接近，回归方程的截距很大，容易出现误差
     # 可能不是均匀分布的，根据y的分布来重新计算x的值
-    delta_x = (max(center_x_list) - min(center_x_list))
-    delta_y = (max(center_y_list) - min(center_y_list))
-    ratio = [(tmp_y - center_y_list[0]) / delta_y for tmp_y in center_y_list]
-    new_center_x_list = [min(center_x_list) + tmp_ratio * delta_x for tmp_ratio in ratio]
+    # 先进行一次关于y和x的预回归
+    new_center_x_list = _pre_regression_on_center_x_y(center_x_list, center_y_list)
+    center_list = [new_center_x_list, center_y_list]
     center_x_var_list = np.array(new_center_x_list).T.reshape(-1, 1)
     center_y_var_list = np.array(center_y_list).T
-    X_var_list = [new_center_x_list, center_y_list]
-    X_var_list = np.array(X_var_list).T
+    X_var_list = np.array([new_center_x_list, center_y_list]).T
     y_var1_list = np.array(length_W_list).T
     y_var2_list = np.array(length_H_list).T
     y_var3_list = np.array(rotate_angle_W_list).T
-    # rec_data_list = StandardScaler().fit_transform(rec_data_list)
-    # rec_data_list = MinMaxScaler().fit_transform(rec_data_list)
-    reg_center = LinearRegression().fit(center_x_var_list, center_y_var_list)
+
+    # reg_center = LinearRegression().fit(center_x_var_list, center_y_var_list)
     reg_length_W = LinearRegression().fit(X_var_list, y_var1_list)
     reg_length_H = LinearRegression().fit(X_var_list, y_var2_list)
     reg_rotate_angle_W = LinearRegression().fit(X_var_list, y_var3_list)
     # print(clf.negative_outlier_factor_)
     # return LOF_data
-    regression_line_center = (reg_center.coef_, reg_center.intercept_)
+    # regression_line_center = (reg_center.coef_, reg_center.intercept_)
     regression_line_length_W = (reg_length_W.coef_, reg_length_W.intercept_)
     regression_line_length_H = (reg_length_H.coef_, reg_length_H.intercept_)
     regression_line_rotate_angle_W = (reg_rotate_angle_W.coef_, reg_rotate_angle_W.intercept_)
-    return regression_line_center, regression_line_length_W, regression_line_length_H, regression_line_rotate_angle_W
+    # return regression_line_center, regression_line_length_W, regression_line_length_H, regression_line_rotate_angle_W
+    return center_list, regression_line_length_W, regression_line_length_H, regression_line_rotate_angle_W
+
 
 # 根据回归中心坐标直线得到回归直线上离原始坐标最近的点
 # rec_point为(中心x坐标，中心y坐标)
@@ -552,15 +547,26 @@ def get_closest_point(regression_line, rec_point):
     closest_rec_point = (x + k * t, y - t)
     return closest_rec_point
 
+# 根据重新分布后的center_list得到center
+def get_center_x_by_list(rec_center, center_list):
+    center_x_list, center_y_list = center_list[0], center_list[1]
+    x, y = rec_center[0], rec_center[1]
+    n = len(center_x_list) - 1
+    xn, x0 = center_x_list[n], center_x_list[0]
+    yn, y0 = center_y_list[n], center_y_list[0]
+    new_x = (y - y0) * (xn - x0) / (yn - y0) + x0
+    return new_x
 # TODO:这个函数有必要拆成更基础的函数
 # 根据回归得到新的rec_data
 # rec_data = [中心x，中心y，length_W，length_H, angle_W]
-def get_new_rec_data_by_regression(rec, regression_center, regression_length_W, regression_length_H, regression_rotate_angle_W):
+def get_new_rec_data_by_regression(rec, center_list, regression_length_W, regression_length_H, regression_rotate_angle_W):
     rec_data = generate_rec_data(rec)
     rec_center = _get_rec_center(rec)
-    new_rec_center = get_closest_point(regression_center, rec_center)
-    x, y = new_rec_center[0], new_rec_center[1]
-    old_x, old_y = rec_center[0], rec_center[1]
+    # new_rec_center = get_closest_point(regression_center, rec_center)
+    # x, y = new_rec_center[0], new_rec_center[1]
+    x = get_center_x_by_list(rec_center, center_list)
+    y = rec_center[1]
+    # old_x, old_y = rec_center[0], rec_center[1]
     coef_length_W, intercept_length_W = regression_length_W[0], regression_length_W[1]
     coef_length_H, intercept_length_H = regression_length_H[0], regression_length_H[1]
     coef_angle,  intercept_angle  = regression_rotate_angle_W[0], regression_rotate_angle_W[1]
@@ -626,11 +632,11 @@ def recs_correction(recs_all, img_width, img_height):
             # 对剩下的点最小二乘回归，计算W长度与倾斜角W随x，y的关系
             rotate_angle_H1, rotate_angle_H2 = get_sign_avg_rec_data(rotate_angle_H1_list), get_sign_avg_rec_data(rotate_angle_H2_list)                
             
-            regression_center, regression_length_W, regression_length_H, regression_rotate_angle_W = regression_(recs_after_LOF)
-            
+            # center_list, regression_length_W, regression_length_H, regression_rotate_angle_W = regression_(recs_after_LOF)
+            center_list, regression_length_W, regression_length_H, regression_rotate_angle_W = regression_(recs_after_LOF)            
             j = 0
             for rec in rec_group:
-                new_rec_data = get_new_rec_data_by_regression(rec, regression_center, regression_length_W, regression_length_H, regression_rotate_angle_W)
+                new_rec_data = get_new_rec_data_by_regression(rec, center_list, regression_length_W, regression_length_H, regression_rotate_angle_W)
                 new_rec_data.append(rotate_angle_H1)
                 new_rec_data.append(rotate_angle_H2)
                 new_rec = get_four_point_by_rec_data(new_rec_data)
