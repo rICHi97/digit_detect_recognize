@@ -78,6 +78,16 @@ def _get_side_vector(rec):
             (rec[2] - rec[4], rec[3] - rec[5]), 
             (rec[0] - rec[6], rec[1] - rec[7]))
 
+def _unify_length(vector_1, vector_2):
+    length_1, length_2 = np.linalg.norm(vector_1), np.linalg.norm(vector_2)
+    if length_1 > length_2:
+        k = length_1 / length_2
+        vector_2 = (k * vector_2[0], k * vector_2[1])
+    else:
+        k = length_2 / length_1
+        vector_1 = (k * vector_1[0], k * vector_1[1])
+    return vector_1, vector_2
+
 # 得到rec中心坐标
 def _get_rec_center(rec):
     center_x, center_y = 0, 0
@@ -480,7 +490,7 @@ def regression_(recs_all):
     # if rotate_angle_H_flag:
     #     rec_data_list.append(rotate_angle_H_list)
     # cnt_data_categories = len(rec_data_list)   
-    X_var_list = [center_x_list, center_y_list]
+    # X_var_list = [center_x_list, center_y_list]
     # y_var1_list = [length_W_list]
     # y_var2_list = [rotate_angle_W_list]
     # 填充rec信息
@@ -503,8 +513,15 @@ def regression_(recs_all):
             rotate_angle_H_list.append(coefficients[5] * (rec_data[8] + rec_data[9]) / 2)
     # 转置为(n_samples, n_features)
     # rec_data_list = np.array(rec_data_list).T
-    center_x_var_list = np.array(center_x_list).T.reshape(-1, 1)
+    # TODO:当接近垂直排布时，x的坐标非常接近，回归方程的截距很大，容易出现误差
+    # 可能不是均匀分布的，根据y的分布来重新计算x的值
+    delta_x = (max(center_x_list) - min(center_x_list))
+    delta_y = (max(center_y_list) - min(center_y_list))
+    ratio = [(tmp_y - center_y_list[0]) / delta_y for tmp_y in center_y_list]
+    new_center_x_list = [min(center_x_list) + tmp_ratio * delta_x for tmp_ratio in ratio]
+    center_x_var_list = np.array(new_center_x_list).T.reshape(-1, 1)
     center_y_var_list = np.array(center_y_list).T
+    X_var_list = [new_center_x_list, center_y_list]
     X_var_list = np.array(X_var_list).T
     y_var1_list = np.array(length_W_list).T
     y_var2_list = np.array(length_H_list).T
@@ -535,6 +552,7 @@ def get_closest_point(regression_line, rec_point):
     closest_rec_point = (x + k * t, y - t)
     return closest_rec_point
 
+# TODO:这个函数有必要拆成更基础的函数
 # 根据回归得到新的rec_data
 # rec_data = [中心x，中心y，length_W，length_H, angle_W]
 def get_new_rec_data_by_regression(rec, regression_center, regression_length_W, regression_length_H, regression_rotate_angle_W):
@@ -542,7 +560,7 @@ def get_new_rec_data_by_regression(rec, regression_center, regression_length_W, 
     rec_center = _get_rec_center(rec)
     new_rec_center = get_closest_point(regression_center, rec_center)
     x, y = new_rec_center[0], new_rec_center[1]
-    # x, y = rec_center[0], rec_center[1]
+    old_x, old_y = rec_center[0], rec_center[1]
     coef_length_W, intercept_length_W = regression_length_W[0], regression_length_W[1]
     coef_length_H, intercept_length_H = regression_length_H[0], regression_length_H[1]
     coef_angle,  intercept_angle  = regression_rotate_angle_W[0], regression_rotate_angle_W[1]
@@ -564,6 +582,7 @@ def get_four_point_by_rec_data(rec_data):
     vector_W  = (length_W * cos(angle_W),  length_W * sin(angle_W))
     vector_H1 = (length_H * cos(angle_H1), length_H * sin(angle_H1))
     vector_H2 = (length_H * cos(angle_H2), length_H * sin(angle_H2))
+    vector_H1, vector_H2 = _unify_length(vector_H1, vector_H2)
     rec_center, vector_W, vector_H1, vector_H2 = np.array(rec_center), np.array(vector_W), np.array(vector_H1), np.array(vector_H2)
     # l/r/t/b = left/right/top/bottom
     rt = rec_center + 0.5 * vector_W + 0.5 * vector_H2
@@ -579,6 +598,8 @@ def get_four_point_by_rec_data(rec_data):
 def recs_correction(recs_all, img_width, img_height):
     width, height = img_width, img_height
     pca_, rec_pca_list = PCA_(recs_all, width, height)
+    if len(rec_pca_list) < 3:
+        return recs_all
     tdt, rec_index_group_list, avg_after_filter, std = divide_rec_list(rec_pca_list)
     new_recs_all = recs_all.copy()
     for i in range(len(rec_index_group_list)):
@@ -625,14 +646,24 @@ def recs_correction(recs_all, img_width, img_height):
 def get_digit_area(rec):
     # 通过向量加减得到四点
     # 四点比例系数 rt/lt/rb/lb
-    coefs = 0.5 * np.array([[0.52, 0.57], [0.52, 0.57], [0.52, 0.57], [0.52, 0.57]])
+    coefs = 0.5 * np.array([[0.45, 0.60], [0.45, 0.60], [0.45, 0.57], [0.45, 0.57]])
     rec_center = _get_rec_center(rec)
     vector_W1, vector_W2, vector_H1, vector_H2 = _get_side_vector(rec)
+    angle_W1, angle_W2 = atan(vector_W1[1] / (vector_W1[0] + epsilon)), atan(vector_W2[1] / (vector_W2[0] + epsilon))
+
+    vector_W1, vector_W2 = _unify_length(vector_W1, vector_W2)
+    vector_H1, vector_H2 = _unify_length(vector_H1, vector_H2)
     rec_center, vector_W1, vector_W2, vector_H1, vector_H2 = np.array(rec_center), np.array(vector_W1), np.array(vector_W2), np.array(vector_H1), np.array(vector_H2)
-    rt = rec_center + coefs[0][0] * vector_W1 + coefs[0][1] * vector_H2
-    lt = rec_center - coefs[1][0] * vector_W1 + coefs[1][1] * vector_H1
-    rb = rec_center + coefs[2][0] * vector_W2 - coefs[2][1] * vector_H2
-    lb = rec_center - coefs[3][0] * vector_W2 - coefs[3][1] * vector_H1
+    vector_W = (vector_W1 + vector_W2) / 2
+    # 顺应方向选择数字区域为平行四边形
+    if angle_W1 > 0:
+        vector_H = vector_H2
+    else:
+        vector_H = vector_H1
+    rt = rec_center + coefs[0][0] * vector_W + coefs[0][1] * vector_H
+    lt = rec_center - coefs[1][0] * vector_W + coefs[1][1] * vector_H
+    rb = rec_center + coefs[2][0] * vector_W - coefs[2][1] * vector_H
+    lb = rec_center - coefs[3][0] * vector_W - coefs[3][1] * vector_H
     digit_area = (rt[0], rt[1], lt[0], lt[1], lb[0], lb[1], rb[0], rb[1])
     return digit_area
 
@@ -642,32 +673,6 @@ def get_all_digit_areas(recs_all):
         digit_area = get_digit_area(rec)
         digit_areas.append(digit_area)
     return digit_areas
-# cnt_recs = len(recs_all)
-# recs_reordered_all = []
-# recs_corrected_all = []
-# coefficient_W, coefficient_H = 0.2, 0.3+
-# # 重排点顺序
-# # 后序可能需要调整，确保直接输入已重排好的rec
-# for i in range(cnt_recs):
-#     reordered_rec, order_str = reorder_rec(recs_all[i])
-#     recs_reordered_all.append(reordered_rec)
-# # 矫正框为平行四边形  
-# for i in range(cnt_recs):
-#     rec = recs_reordered_all[i]
-#     center_x, center_y = _get_rec_center(rec)
-#     W1, W2, H1, H2 = _get_side_vector(rec)
-#     avg_W_vector, avg_H_vector = np.array([(W1[0] + W2[0]) / 2, (W1[1] + W2[1]) / 2]), np.array([(H1[0] + H2[0]) / 2, (H1[1] + H2[1]) / 2])
-#     center_vector = np.array([center_x, center_y])
-#     # half_W_vector, half_H_vector = [avg_W[0] / 2, avg_W[1] / 2], [avg_H[0] / 2, avg_H[1] / 2]
-#     # udlr = up down left right
-#     ur_vector = center_vector + 0.95 * coefficient_W * avg_W_vector + coefficient_H * avg_H_vector
-#     ul_vector = center_vector - 1.05 * coefficient_W * avg_W_vector + coefficient_H * avg_H_vector
-#     dl_vector = center_vector - 1.05 * coefficient_W * avg_W_vector - 0.9 * coefficient_H * avg_H_vector
-#     dr_vecror = center_vector + 0.95 * coefficient_W * avg_W_vector - 0.9 * coefficient_H * avg_H_vector
-#     number_region = [ur_vector[0], ur_vector[1], ul_vector[0], ul_vector[1], dl_vector[0], dl_vector[1], dr_vecror[0], dr_vecror[1]]
-#     recs_corrected_all.append(number_region)
-# # return recs_reordered_all
-# return recs_corrected_all
 
 def number_results_correction(numbers):
      # print(numbers)

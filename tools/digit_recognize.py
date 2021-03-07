@@ -54,5 +54,3 @@ def digit_recognize(digit_rec_file_path):
                     temp_string = '%s'%(all_chars[i + 1]['char'])
             all_string.append(temp_string)
             result_dic['%s'%(digit_rec)] = (response.json())['words_result'][0]['words']
-
-
