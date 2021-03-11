@@ -642,7 +642,7 @@ def recs_correction(recs_all, img_width, img_height):
                 new_rec = get_four_point_by_rec_data(new_rec_data)
                 new_recs_all[rec_index_group[j]] = new_rec
                 j += 1
-    return new_recs_all
+    return new_recs_all, rec_index_group_list
 
 # 从框四点坐标得到数字区域坐标
 # 输入：一张图片所有recs
@@ -652,11 +652,11 @@ def recs_correction(recs_all, img_width, img_height):
 def get_digit_area(rec):
     # 通过向量加减得到四点
     # 四点比例系数 rt/lt/rb/lb
-    coefs = 0.5 * np.array([[0.45, 0.60], [0.45, 0.60], [0.45, 0.57], [0.45, 0.57]])
     rec_center = _get_rec_center(rec)
     vector_W1, vector_W2, vector_H1, vector_H2 = _get_side_vector(rec)
     angle_W1, angle_W2 = atan(vector_W1[1] / (vector_W1[0] + epsilon)), atan(vector_W2[1] / (vector_W2[0] + epsilon))
-
+    ratio = 0.1 * sin(angle_W1)
+    coefs = 0.5 * np.array([[0.45 + ratio, 0.60 + ratio], [0.50 + 2 * ratio, 0.60 + ratio], [0.50 + ratio, 0.50 + ratio], [0.50 + 2 * ratio, 0.50 + ratio]])
     vector_W1, vector_W2 = _unify_length(vector_W1, vector_W2)
     vector_H1, vector_H2 = _unify_length(vector_H1, vector_H2)
     rec_center, vector_W1, vector_W2, vector_H1, vector_H2 = np.array(rec_center), np.array(vector_W1), np.array(vector_W2), np.array(vector_H1), np.array(vector_H2)
@@ -680,78 +680,35 @@ def get_all_digit_areas(recs_all):
         digit_areas.append(digit_area)
     return digit_areas
 
-def number_results_correction(numbers):
-     # print(numbers)
-     NUMBER_THRESHOLD = 50
-     numbers_indices_list = []
-     numbers_indices_valid_list = []
-     avg_number = 0
-     cnt_invalid_number = 0 
-     # avg_start_number = 0
-     # 计算平均值，建立预测数字与序号列表
+# 返回position center位于哪一段区间
+def find_center_corresponding_position(position_center, sequential_position):
+    for i in range(len(sequential_position)):
+        position = sequential_position[i]
+        if position[0] < position_center < position[1]:
+            return i
+    return 999
+
+# 每个group中的所有编号是顺序的，所以使用编号识别结果减去索引应该是一致的
+# 依此进行矫正
+def digit_results_correction(sequential_digit_position, recognize_digit_and_position, previous_digit_cnt):
      
-     for i in range(len(numbers)):
-        if int(numbers[i]) > NUMBER_THRESHOLD:
-            cnt_invalid_number += 1
-            continue
-        avg_number += int(numbers[i]) / (len(numbers) - cnt_invalid_number)
-        # avg_start_number += (numbers[i] - i + 1) / len(numbers)
-        numbers_indices_list.append([int(numbers[i]), i])
-     # print(numbers_indices_list)
-        # print(numbers[i], i)
-        
-     # 筛选异常值
-     # 大于阈值
-     for i in range(len(numbers_indices_list)):
-         tmp_number = numbers_indices_list[i][0]
-         tmp_index = numbers_indices_list[i][1]
-         # if tmp_number > NUMBER_THRESHOLD or (tmp_number -  tmp_index) < 0 or tmp_number > (avg_number + int(1.2 * 0.5 * len(numbers))):
-         if tmp_number > NUMBER_THRESHOLD or (tmp_number -  tmp_index) < 0:
-             continue
-         numbers_indices_valid_list.append(numbers_indices_list[i])
-     # print(numbers_indices_valid_list)
-     
-    # 计算起点
-     numbers_indices_dict = {}
-     for i in range(len(numbers_indices_valid_list)):
-         tmp_start_number = numbers_indices_valid_list[i][0] - numbers_indices_valid_list[i][1]
-         if str(tmp_start_number) not in numbers_indices_dict:
-             numbers_indices_dict[str(tmp_start_number)] = 1
-         else:
-             numbers_indices_dict[str(tmp_start_number)] += 1
-            
-     start_number = int(max(zip(numbers_indices_dict.values(), numbers_indices_dict.keys()))[1])
-     number_corrected_results = []
-     for i in range(len(numbers)):
-        number_corrected_results.append(str(start_number + i))
-        
-     return number_corrected_results
-                       
-    # avg_lof_score = 0 #平均lof得分
-    # inlier_index = [] #内围点序号
-    # x_list_after_LOF = [] #LOF之后框中心x坐标
-    # recs_after_LOF = [] #LOF之后框四点坐标
-    # cnt_recs = len(text_recs_all)
-    # # 获取中心点坐标
-    # center_x_list, center_y_list = _from_recs_to_centers(text_recs_all)
-    # # plt.scatter(x = center_x_list,y = center_y_list)
-    
-    # # LOF
-    # # 只对x坐标计算LOF，注意参数选择
-    # # 0.3倍可能过于宽松
-    # clf = LocalOutlierFactor(n_neighbors=int(0.4 * cnt_recs))
-    # clf.fit(np.array(center_x_list).reshape(-1, 1))
-    # lof_scores = clf.negative_outlier_factor_
-    # print(lof_scores)
-    # for i in range(len(lof_scores)):
-    #     avg_lof_score += lof_scores[i] / len(lof_scores)
-    # # 绝对值大于均值lof_scores的视为离群点
-    # for i in range(len(lof_scores)):
-    #     # LOF得分可调，1.6左右
-    #     if ( abs(lof_scores[i]) < abs(avg_lof_score) ) or (abs(lof_scores[i]) < 1.6):
-    #         inlier_index.append(i)
-    #         x_list_after_LOF.append(center_x_list[i])
-    #         recs_after_LOF.append(text_recs_all[i])
-            
-    # return recs_after_LOF
-    # return inlier_index
+    start_numbers_all = {}
+    # 检测到有digit的区域个数，但并不是每个digit都能够识别
+    cnt_digit = len(sequential_digit_position)
+    for key in recognize_digit_and_position.keys():
+        digit = int(key[:-1])
+        position = recognize_digit_and_position[key]
+        center = (position[0] + position[1]) / 2
+        index = find_center_corresponding_position(center, sequential_digit_position)
+        start_number = str(digit - index - previous_digit_cnt)
+        if start_number not in start_numbers_all.keys():
+            start_numbers_all[start_number] = 1
+        else:
+            start_numbers_all[start_number] += 1
+    # 出现次数最多的作为最终的start_number
+    final_start_number = int(max(zip(start_numbers_all.values(), start_numbers_all.keys()))[1])
+
+    digit_results_corrected = []
+    for i in range(cnt_digit):
+        digit_results_corrected.append(i + final_start_number + previous_digit_cnt)
+    return digit_results_corrected
