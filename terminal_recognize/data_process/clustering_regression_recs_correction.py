@@ -16,7 +16,7 @@ from math import sin, cos, atan, atan2, degrees, radians, pi, hypot
 from PIL import Image, ImageDraw
 epsilon  = 1e-4
 
-def  reorder_vertexes(xy_list):
+def reorder_vertexes(xy_list):
     reorder_xy_list = np.zeros_like(xy_list)
     # determine the first point with the smallest x,
     # if two has same x, choose that with smallest y,
