@@ -16,6 +16,7 @@ from math import sin, cos, atan, atan2, degrees, radians, pi, hypot
 from PIL import Image, ImageDraw
 epsilon  = 1e-4
 
+# 9/25完成
 def reorder_vertexes(xy_list):
     reorder_xy_list = np.zeros_like(xy_list)
     # determine the first point with the smallest x,
@@ -68,6 +69,7 @@ def reorder_vertexes(xy_list):
     
     return reorder_xy_list
 
+# 9/25完成
 #  from copy import deepcopy
 # 得到各边向量
 # 返回顺序为W1，W2， H1，H2
@@ -78,6 +80,7 @@ def _get_side_vector(rec):
             (rec[2] - rec[4], rec[3] - rec[5]), 
             (rec[0] - rec[6], rec[1] - rec[7]))
 
+# 9/25完成
 def _unify_length(vector_1, vector_2):
     length_1, length_2 = np.linalg.norm(vector_1), np.linalg.norm(vector_2)
     if length_1 > length_2:
@@ -88,6 +91,7 @@ def _unify_length(vector_1, vector_2):
         vector_1 = (k * vector_1[0], k * vector_1[1])
     return vector_1, vector_2
 
+# 9/25完成
 # 得到rec中心坐标
 def _get_rec_center(rec):
     center_x, center_y = 0, 0
@@ -96,6 +100,7 @@ def _get_rec_center(rec):
         center_y += rec[2 * i + 1] / 4
     return center_x, center_y
 
+# 9/25完成
 # 将框四点坐标list转为框中心坐标list
 # 输入：框四点坐标list
 # 返回：框中心坐标list，框中心x坐标list，框中心y坐标list
@@ -110,6 +115,7 @@ def _from_recs_to_centers(recs):
         center_y_list.append(center_y)
     return center_x_list, center_y_list
 
+# 9/25完成
 # 重排rec顺序
 # 原始rec四点顺序都是按逆时针给出，但是起点可能错误
 # 每个rec为4点坐标，对应四条边。找出两组对边，比较两组对边中最长边
@@ -149,6 +155,7 @@ def reorder_rec_my_version(rec):
             reordered_rec = [rec[6], rec[7], rec[0], rec[1], rec[2], rec[3], rec[4], rec[5]]
             return reordered_rec,'3,0,1,2'
 
+# 9/25完成
 # 参照作者代码
 def reorder_rec(rec):
     rec = np.array(rec).reshape((4, 2))
@@ -161,6 +168,7 @@ def reorder_rec(rec):
     rec = np.reshape(rec, (1, 8))[0]
     return rec, 'test'
 
+# 9/25完成
 #  生成rec信息
 # 输入为重排后的rec坐标
 # 目前考虑如下信息：中心坐标2维、W长度2维、H长度2维、W与图片宽度方向夹角2维、H与图片宽度方向夹角2维
@@ -185,14 +193,15 @@ def generate_rec_data(rec):
     if atan(H2[1] / (H2[0] + epsilon)) > 0:
         rotate_angle_H2 = pi + atan(H2[1] / (H2[0] + epsilon))
     else:
-        rotate_angle_H2 = atan(H2[1] / (H2[0] + epsilon))
+        rotate_angle_H2 = atan(H2[1] / (H2[0] + epsilon)) 
     rec_data = [center_x, center_y,
                 length_W1, length_W2,
                 length_H1, length_H2,
                 rotate_angle_W1, rotate_angle_W2,
                 rotate_angle_H1, rotate_angle_H2]
     return rec_data
-   
+
+# 9/25完成
 # 得到某一维rec_data的平均值
 # 单独计算data > 0 的平均和 data < 0的平均，最终符号以计数较多为准
 def get_sign_avg_rec_data(rec_data_list):
@@ -577,6 +586,7 @@ def get_new_rec_data_by_regression(rec, center_list, regression_length_W, regres
     new_rec_data = [x, y, new_length_W, new_length_H, new_rotate_angle_W]
     return new_rec_data
 
+# 9/29完成
 # 从rec_data得到四点坐标
 # rec_data = [中心x，中心y，length_W，length_H, angle_W, angle_H1, angle_H2]
 # 根据四边向量和中心得到四点坐标可以写成函数
