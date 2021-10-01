@@ -25,47 +25,50 @@ import exception
 UserException = exception.UserException
 EPSILON = 1e-4
 
-def __get_vector(length, rotate_angle):
+def _get_vector(length, rotate_angle):
 
-    vector = [length * math.cos(angle), length * math.sin(angle)]
+    vector = [length * math.cos(rotate_angle), length * math.sin(rotate_angle)]
 
     return vector
 
-def __get_vector_lengh(vector):
+def _get_vector_length(vector):
 
-    length = np.linalg.norm(edge_vector)
+    length = np.linalg.norm(vector)
 
     return length
 
-def __get_vector_rotate_angle(vector):
+def _get_vector_rotate_angle(vector):
 
     rotate_angle = math.atan(vector[1] / vector[0] + EPSILON)
 
     return rotate_angle
 
+
 class RecData(object):
     """
     从rec四点坐标得到rec data，如边长度、中心坐标
     """
-    @staticmethod
-    def get_multi_recs_data(recs_xy_list, data_func):
-        """
-        得到多个rec的data
-        Parameters
-        ----------
-        recs_xy_list：多个rec的四点坐标
-        data_func：得到每个rec的data的函数
 
-        Returns
-        ----------
-        recs_data_list: 多个rec的data的list
-        """
-        recs_data_list = []
-        for xy_list in recs_xy_list:
-            rec_data = data_func(xy_list)
-            recs_data_list.append(rec_data)
+    # TODO：好像没法用，对每个rec求data时，data_func的参数无法确定
+    # @staticmethod
+    # def get_multi_recs_data(recs_xy_list, data_func, **func_args):
+    #     """
+    #     得到多个rec的data
+    #     Parameters
+    #     ----------
+    #     recs_xy_list：多个rec的四点坐标
+    #     data_func：得到每个rec的data的函数
 
-        return recs_data_list      
+    #     Returns
+    #     ----------
+    #     recs_data_list: 多个rec的data的list
+    #     """
+    #     recs_data_list = []
+    #     for xy_list in recs_xy_list:
+    #         rec_data = data_func(xy_list)
+    #         recs_data_list.append(rec_data)
+
+    #     return recs_data_list      
 
     @staticmethod
     def get_avg_rec_data(recs_data_list, is_rotate_angle=False):
@@ -83,7 +86,7 @@ class RecData(object):
         avg_rec_data：多个rec的data平均
         """
         # TODO：data list长度不能为0
-        if is_rotate_angle:/
+        if is_rotate_angle:
             positive_data = [data for data in recs_data_list if data > 0]   
             negative_data = [data for data in recs_data_list if data < 0]
             if len(positive_data) > len(negative_data):
@@ -137,7 +140,7 @@ class RecData(object):
         if is_edge_H:
             if rotate_angle > 0:
                 rotate_angle += math.pi
-        edge_vector = __get_vector(length, rotate_angle)
+        edge_vector = _get_vector(length, rotate_angle)
 
         return edge_vector
 
@@ -168,7 +171,7 @@ class RecData(object):
         length_W=True, 
         length_H=True, 
         rotate_angle_W=True, 
-        rotate_angle_H=True
+        rotate_angle_H=True,
     ):
         """
         Parameters
@@ -179,10 +182,9 @@ class RecData(object):
         length_H：返回长度数据
         rotate_angle_W：返回宽度向量旋转角数据
         rotate_angle_H：返回长度向量旋转角数据
-        
         Returns
         ----------
-        rec_shape_data：框data字典
+        rec_shape_data：rec data字典
         """
         xy_list = RecDataProcessing.reorder_rec(xy_list)
         rec_shape_data = {}
@@ -193,26 +195,26 @@ class RecData(object):
 
         if length_W or length_H or rotate_angle_H or rotate_angle_W:
             W1, W2, H1, H2 = RecData.get_four_edge_vectors(xy_list)
-
+        
         if length_W:
-            length_W1, length_W2 = __get_vector_lengh(W1), __get_vector_lengh(W2)
+            length_W1, length_W2 = _get_vector_length(W1), _get_vector_length(W2)
             rec_shape_data['length_W'] = [length_W1, length_W2]
 
         if length_H:
-            length_H1, length_H2 = __get_vector_lengh(H1), __get_vector_lengh(H2)
+            length_H1, length_H2 = _get_vector_length(H1), _get_vector_length(H2)
             rec_shape_data['length_H'] = [length_H1, length_H2]
 
         if rotate_angle_W:
             rotate_angle_W1, rotate_angle_W2 = (
-                __get_vector_rotate_angle(W1), 
-                __get_vector_rotate_angle(W2)
+                _get_vector_rotate_angle(W1), 
+                _get_vector_rotate_angle(W2)
             )
             rec_shape_data['rotate_angle_W'] = [rotate_angle_W1, rotate_angle_W2]
 
         if rotate_angle_H:
             rotate_angle_H1, rotate_angle_H2 = (
-                RecData.get_vector_rotate_angle(W1), 
-                RecData.get_vector_rotate_angle(W2)
+                _get_vector_rotate_angle(W1), 
+                _get_vector_rotate_angle(W2)
             )
             rec_shape_data['rotate_angle_H'] = [rotate_angle_H1, rotate_angle_H2]
 
@@ -379,7 +381,7 @@ class RecDataProcessing(object):
         ----------
         reorder_xy_list:重排后4x2格式rec端点坐标        
         """
-        xy_list = reorder_vertexes(xy_list)
+        xy_list = RecDataProcessing.reorder_vertexes(xy_list)
         # 调整起点
         tmp_x, tmp_y = xy_list[3, 0], xy_list[3, 1]
         for i in range(3, 0, -1):
