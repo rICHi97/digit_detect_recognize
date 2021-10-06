@@ -72,6 +72,15 @@ class RecDataIO(object):
 
     @staticmethod
     def write_rec_txt(recs_xy_list, txt_dir, txt_name):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        # TODO
+        pass
 
 
         

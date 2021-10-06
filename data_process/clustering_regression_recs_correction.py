@@ -284,6 +284,8 @@ def LOF(recs_all):
     return clf.negative_outlier_factor_, LOF_data, rec_data_list
   
  # PCA
+
+# 10/3完成
 # 输入：框四点坐标list
 # 返回：分类信息
 def PCA_(recs_all, img_width, img_height):

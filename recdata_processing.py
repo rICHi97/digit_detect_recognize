@@ -220,6 +220,22 @@ class RecData(object):
 
         return rec_shape_data
 
+    @staticmethod
+    def get_draw_pos(xy_list, direction='center'):
+        """
+        获取基于每个rec框位置的绘制坐标
+        Parameters
+        ----------
+        xy_list：框四点坐标
+        # TODO：direction方位，可选'top'/'bottom'/'left'/'right'/'center'
+
+        Returns
+        ----------
+        pos：绘制坐标
+        """
+        pass
+
+
     # TODO: 旧版代码中使用W和H的长度平均值，W的角度平均值计算，需要考虑和回归数据的影响
     @staticmethod
     def get_xy_list(rec_shape_data):

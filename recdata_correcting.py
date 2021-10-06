@@ -21,13 +21,7 @@ LinearRegression = linear_model.LinearRegression
 PCA = decomposition.PCA
 EPSILON = 1e-4
 
-class RecDataCorrecting(object):
-
-	"""
-	用于实现端子数据的矫正，主要基于sklearn库
-	包括PCA、LinearRegression
-	"""
-	def _get_train_data(
+def _get_train_data(
 		recs_xy_list,
 		norm_width,
 		norm_height,
@@ -66,15 +60,13 @@ class RecDataCorrecting(object):
 			data_list = []
 			# 归一化
 			xy_list = recdata_processing.RecDataProcessing.from_42_to_18(xy_list)
-			for i in range(4):
-				# TODO：检查是否为0
-				if norm_width is not None:
+			if norm_width is not None and norm_height is not None:
+				for i in range(4):
 					xy_list[2 * i] /= norm_width
-				if norm_height is not None:
 					xy_list[2 * i + 1] /= norm_height
 
 			# 获取形状数据
-			shape_data = recdata_processing.RecDataProcessing.get_rec_shape_data(
+			shape_data = recdata_processing.RecData.get_rec_shape_data(
 				xy_list,
 				center,
 				length_W,
@@ -85,7 +77,7 @@ class RecDataCorrecting(object):
 
 			# 改变数据形状
 			if center:
-				data_list = extract_dict_to_list(shape_data, avg=False, data_list, 'center')
+				data_list = extract_dict_to_list(shape_data, False, data_list, 'center')
 			keys=[]
 			if length_W:
 				keys.append('length_W')
@@ -104,13 +96,18 @@ class RecDataCorrecting(object):
 					data_list[i] *= coef[i]
 
 			# 已获取1 * n_features数据
-			sklearn_data.append(sklearn_data)
+			sklearn_data.append(data_list)
 
 		sklearn_data = np.array(sklearn_data)
 
 		return sklearn_data
 
-	def PCA_(
+
+class PCA_(object):
+	"""
+	PCA及基于pca value的分组
+	"""
+	def get_pca_values(
 		recs_xy_list,
 		norm_width=None,
 		norm_height=None,
@@ -142,10 +139,10 @@ class RecDataCorrecting(object):
 
 		Returns
 		----------
-		pca_list：降维后PCA坐标
+		pca_values：降维后PCA坐标
 		"""
 		# TODO：检查coef与True feature是否一致
-		sklearn_data = RecDataCorrecting._get_train_data(
+		sklearn_data = _get_train_data(
 			recs_xy_list,
 			norm_width,
 			norm_height,
@@ -157,10 +154,87 @@ class RecDataCorrecting(object):
 			coef,
 			avg
 		)
-		pca_list = PCA(n_components=1).fit(sklearn_data)
+		pca_ = PCA(n_components=1).fit(sklearn_data)
+		pca_values = pca_.transform(sklearn_data)
+		pca_values = [value[0] for value in pca_values]
+		if not return_instance:
+			return pca_values
 
-		return pca_list
-
+	def get_delta_values(delta_order, pca_values):
+		"""
+		由pca value得到差值value
+		delta_order = n：
+			--i < n: delta_value[i] = float('nan')
+			--i >= n:delta_value[i] = pca_value[i] - pca_value[i - n]
 		
+		Parameters
+
+		----------
+		delta_order：差值阶数
+		pca_values：降维后pca坐标，默认1维
+
+		Returns
+		----------
+		delta_values：差值坐标
+		"""
+		delta_values = []
+		for i in range(len(pca_values)):
+			if i < delta_order:
+				delta_values.append(float('nan'))
+			else:
+				delta_values.append(pca_values[i] - pca_values[i - delta_order])
+
+		return delta_values
+
+	def _get_avg_delta_value(delta_values):
+
+		delta_values = [
+			delta_value for delta_value in delta_values if not math.isnan(delta_value)
+		]
+		avg_delta_value = sum(delta_values) / len(delta_values)
+
+		return avg_delta_value
+
+	def divide_recs(pca_values):
+		"""
+		通过PCA值对端子分组，端子分布分为三类：单列、双列、单列多线
+		Parameters
+		----------
+		recs_xy_list：多个rec的四点坐标
+		Returns
+		----------
+		"""
+		def get_delta_ratio(pca_values):
+
+			delta_one_values, delta_two_values = (
+				PCA_.get_delta_values(1, pca_values), 
+				PCA_.get_delta_values(2, pca_values)
+			)
+			avg_delta_one_value, avg_delta_two_value = (
+				PCA_._get_avg_delta_value(delta_one_values),
+				PCA_._get_avg_delta_value(delta_two_values)
+			)
+			delta_ratio = abs(avg_delta_two_value) / abs(avg_delta_one_value + EPSILON)
+
+			return delta_ratio
+
+		# TODO：命名还需考虑
+		# TODO：枚举
+		distribution_types = ('one_col', 'two_cols', 'one_col_n_lines')
+		# 端子如果单列分布，avg_delta_two_value大致为avg_delta_one_value的两倍
+		# 考虑一定的裕度
+		one_col_range = [1.8, 2.5]
+		is_num_in_range = (
+			lambda num, range_: True if num > range_[0] and num < range_[1] else False
+		)
+
+		# 此时为单列分布
+		if is_num_in_range(delta_ratio, one_col_range):
+
+		# 此时为双列分布
+		else:
+			distribution_type = distribution_types[]
+			
+
 
 
