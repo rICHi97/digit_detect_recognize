@@ -21,6 +21,8 @@ LinearRegression = linear_model.LinearRegression
 PCA = decomposition.PCA
 EPSILON = 1e-4
 
+_filter_nan_data = lambda data_list: [data for data in data_list if not math.isnan(data)]
+
 def _get_train_data(
 		recs_xy_list,
 		norm_width,
@@ -102,6 +104,34 @@ def _get_train_data(
 
 		return sklearn_data
 
+# TODO：只有前两个delta_pca_value可能是nan
+def _get_avg(data_list):
+	"""
+	求平均值，不考虑nan
+	"""
+	data_list = _filter_nan_data(data_list)
+	avg = sum(data_list) / len(data_list)
+
+	return avg
+
+def _get_filter_data(data_list, filter_nan=True):
+	"""
+	通过标准差过滤数据
+	"""
+	filter_data, filter_threshold = [], 2.5
+	nonan_data_list = _filter_nan_data(data_list)
+	avg = _get_avg(nonan_data_list)
+	std = np.sqrt(np.mean(np.array(nonan_data_list) - avg) ** 2)
+	for data in data_list:
+		# (是nan and filter_nan = False) or ((data - avg) < filter_threshold * std)
+		if not filter_nan and math.isnan(data):
+			filter_data.append(data)
+		# 'nan' -a > b is False, 'nan' - a < b is False
+		elif abs(data - avg) < filter_threshold * std:
+			filter_data.append(data)
+
+	return filter_data
+
 
 class PCA_(object):
 	"""
@@ -118,10 +148,11 @@ class PCA_(object):
 		rotate_angle_H=False,
 		coef=None,
 		avg=True,
-		return_instance=False
+		return_instance=False,
 	):
 		"""
 		对rec数据降维，目前暂定原始数据为中心坐标，降维至1维
+
 		Parameters
 		----------
 		recs_xy_list：多个rec的四点坐标
@@ -166,9 +197,8 @@ class PCA_(object):
 		delta_order = n：
 			--i < n: delta_value[i] = float('nan')
 			--i >= n:delta_value[i] = pca_value[i] - pca_value[i - n]
-		
-		Parameters
 
+		Parameters
 		----------
 		delta_order：差值阶数
 		pca_values：降维后pca坐标，默认1维
@@ -186,23 +216,21 @@ class PCA_(object):
 
 		return delta_values
 
-	def _get_avg_delta_value(delta_values):
-
-		delta_values = [
-			delta_value for delta_value in delta_values if not math.isnan(delta_value)
-		]
-		avg_delta_value = sum(delta_values) / len(delta_values)
-
-		return avg_delta_value
-
 	def divide_recs(pca_values):
 		"""
 		通过PCA值对端子分组，端子分布分为三类：单列、双列、单列多线
+		当avg_delta_two_value大致为avg_delta_one_value两倍时，为单列
+		否则为双列，双列时判断pca_value正负号
+		单列时，逐个判断delta_one_value与avg_delta_one_value
 		Parameters
 		----------
 		recs_xy_list：多个rec的四点坐标
+
 		Returns
 		----------
+		divide_groups：分组字典
+		--'index'：list，元素为每组的index
+		--'value'：list，每组的pca_value
 		"""
 		def get_delta_ratio(pca_values):
 
@@ -211,18 +239,62 @@ class PCA_(object):
 				PCA_.get_delta_values(2, pca_values)
 			)
 			avg_delta_one_value, avg_delta_two_value = (
-				PCA_._get_avg_delta_value(delta_one_values),
-				PCA_._get_avg_delta_value(delta_two_values)
+				_get_avg(delta_one_values),
+				_get_avg(delta_two_values)
 			)
 			delta_ratio = abs(avg_delta_two_value) / abs(avg_delta_one_value + EPSILON)
 
 			return delta_ratio
+
+		def divide_one_col(pca_values):
+
+			delta_one_values = PCA_.get_delta_values(1, pca_values)
+			avg_delta_value = _get_avg(_get_filter_data(delta_one_values))
+			# 逐个比较
+			cnt_leap, threshold_leap = 0, 1.6
+			divide_groups = {'index': [], 'value': []}
+			tmp_group_index, tmp_group_value = [], []
+			for index_, delta_value in enumerate(delta_one_values):
+				if(
+					math.isnan(delta_value) or 
+					abs(delta_value) < threshold_leap * abs(avg_delta_value)
+				):
+					tmp_group_index.append(index_)
+					tmp_group_value.append(pca_values[index_])
+				# 此时认定发生跳跃，是一列中的另一条线
+				else:
+					divide_groups['index'].append(tmp_group_index)
+					divide_groups['value'].append(tmp_group_value)
+					cnt_leap += 1
+					tmp_group_index.clear()
+					tmp_group_value.clear()
+
+				return divide_groups				
+
+		def divide_two_cols(pca_values):
+
+			group1_index, group2_index = [], []
+			group1_value, group2_value = [], []
+			for index_, value in enumerate(pca_values):
+				if value > 0:
+					group1_index.append(index_)
+					group1_value.append(value)
+				else:
+					group2_index.append(index_)
+					group2_value.append(value)					
+			divide_groups = {
+				'index': [group1_index, group2_index],
+				'value': [group1_value, group2_value]
+			}
+
+			return divide_groups
 
 		# TODO：命名还需考虑
 		# TODO：枚举
 		distribution_types = ('one_col', 'two_cols', 'one_col_n_lines')
 		# 端子如果单列分布，avg_delta_two_value大致为avg_delta_one_value的两倍
 		# 考虑一定的裕度
+		delta_ratio = get_delta_ratio(pca_values)
 		one_col_range = [1.8, 2.5]
 		is_num_in_range = (
 			lambda num, range_: True if num > range_[0] and num < range_[1] else False
@@ -230,11 +302,11 @@ class PCA_(object):
 
 		# 此时为单列分布
 		if is_num_in_range(delta_ratio, one_col_range):
-
+			divide_groups = divide_one_col(pca_values)
 		# 此时为双列分布
 		else:
-			distribution_type = distribution_types[]
-			
+			distribution_type = distribution_types[1] # 'two_cols'
+			divide_groups = divide_two_cols(pca_values)
 
 
 
