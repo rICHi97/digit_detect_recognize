@@ -62,14 +62,7 @@ class RecData(object):
     #     Returns
     #     ----------
     #     recs_data_list: 多个rec的data的list
-    #     """
-    #     recs_data_list = []
-    #     for xy_list in recs_xy_list:
-    #         rec_data = data_func(xy_list)
-    #         recs_data_list.append(rec_data)
-
-    #     return recs_data_list      
-
+    #     """    
     @staticmethod
     def get_avg_rec_data(recs_data_list, is_rotate_angle=False):
         """
@@ -257,12 +250,12 @@ class RecData(object):
         ra_W, ra_H = _['rotate_angle_W'], _['rotate_angle_H']
         vector_W1, vector_W2 = (
             RecData.get_edge_vector(length_W[0], ra_W[0], is_edge_H=False),
-            RecData.get_edge_vector(length_W[1], ra_W[1], is_edge_H=False)
+            RecData.get_edge_vector(length_W[1], ra_W[1], is_edge_H=False),
 
         )
         vector_H1, vector_H2 = (
             RecData.get_edge_vector(length_H[0], ra_H[0], is_edge_H=True),
-            RecData.get_edge_vector(length_H[1], ra_H[1], is_edge_H=True)
+            RecData.get_edge_vector(length_H[1], ra_H[1], is_edge_H=True),
         )
         # l/r/t/b = left/right/top/bottom
         rt = np.array(center) + 0.5 * np.array(vector_W1) + 0.5 * np.array(vector_H2)

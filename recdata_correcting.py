@@ -16,12 +16,14 @@ import numpy as np
 from sklearn import linear_model, decomposition, preprocessing
 
 import recdata_processing
+import visualization
 
 LinearRegression = linear_model.LinearRegression
-PCA = decomposition.PCA
+PCA_ = decomposition.PCA
 EPSILON = 1e-4
 
 _filter_nan_data = lambda data_list: [data for data in data_list if not math.isnan(data)]
+
 
 def _get_train_data(
 		recs_xy_list,
@@ -33,7 +35,7 @@ def _get_train_data(
 		rotate_angle_W,
 		rotate_angle_H,
 		coef,
-		avg
+		avg,
 		):
 		"""
 		获取用于sklearn的数据
@@ -47,15 +49,17 @@ def _get_train_data(
 		"""	
 		sklearn_data = []
 
-		def extract_dict_to_list(data_dict, avg, dist_list, key):
-		
+		def extract_dict_to_list(data_dict, avg, dest_list, key):
+			
+			# 中心、长度、倾斜角各有两维
+			# 对中心xy坐标取平均似乎没有意义
 			if avg:
-				dist_list.append(np.array(data_dict[key]).mean())
+				dest_list.append(np.array(data_dict[key]).mean())
 			else:
-				dist_list.append(data_dict[key][0])
-				dist_list.append(data_dict[key][1])
+				dest_list.append(data_dict[key][0])
+				dest_list.append(data_dict[key][1])
 
-			return dist_list
+			return dest_list
 
 		for xy_list in recs_xy_list:
 
@@ -89,6 +93,7 @@ def _get_train_data(
 				keys.append('rotate_angle_W')
 			if rotate_angle_H:
 				keys.append('rotate_angle_H')
+				
 			for key in keys:
 				data_list = extract_dict_to_list(shape_data, avg, data_list, key)
 
@@ -132,11 +137,14 @@ def _get_filter_data(data_list, filter_nan=True):
 
 	return filter_data
 
+# TODO：同一张图片的data保存以便后续使用
+# tarin_data_dict = {'img_name':, 'train_data':}
 
-class PCA_(object):
+class PCA(object):
 	"""
 	PCA及基于pca value的分组
 	"""
+    # TODO：一定需要归一化？
 	def get_pca_values(
 		recs_xy_list,
 		norm_width=None,
@@ -185,7 +193,7 @@ class PCA_(object):
 			coef,
 			avg
 		)
-		pca_ = PCA(n_components=1).fit(sklearn_data)
+		pca_ = PCA_(n_components=1).fit(sklearn_data)
 		pca_values = pca_.transform(sklearn_data)
 		pca_values = [value[0] for value in pca_values]
 		if not return_instance:
@@ -308,5 +316,178 @@ class PCA_(object):
 			distribution_type = distribution_types[1] # 'two_cols'
 			divide_groups = divide_two_cols(pca_values)
 
+		return divide_groups
 
 
+class Regression(object):
+
+	def _correct_rec_center(center_xy_data):
+		"""
+		在对端子矫正前，先对xy坐标进行预矫正，基本思路是通过y坐标矫正x坐标
+		Parameters
+		----------
+		center_xy_data：多个端子的中心坐标，n_samples * n_features形状
+
+		Returns
+		corrected_xy_data：矫正后xy中心坐标
+		----------
+		"""
+		# 回归确定整体走向
+		center_x_data, center_y_data = center_xy_data[:, 0], center_xy_data[:, 1]
+		delta_x, delta_y = (
+			np.max(center_x_data) - np.min(center_x_data),
+			np.max(center_y_data) - np.min(center_y_data),
+		)
+		reg = LinearRegression().fit(center_x_data.reshape(-1, 1), center_y_data)
+		k = 1 if reg.coef_[0] > 0 else -1
+
+		# 认定y坐标跨度大，通过y分布矫正x分布
+		new_center_x_data, new_center_y_data = [], []
+		for i in range(len(center_x_data)):
+			ratio = (center_y_data[i] - np.min(center_y_data)) / delta_y
+			new_center_x = k * ratio * delta_x + np.min(center_x_data)
+			new_center_y = k * ratio * delta_y + np.min(center_y_data)
+			new_center_x_data.append(new_center_x)
+			new_center_y_data.append(new_center_y)
+
+		new_center_xy_data = np.array([new_center_x_data, new_center_y_data]).T
+
+		return new_center_xy_data
+
+	# TODO：比较归一化对结果的影响
+	def regression(
+		recs_xy_list,
+		norm_width=None,
+		norm_height=None,
+		coef=None,
+		avg=False, # TODO：暂时不考虑avg，默认所有变量都不取平均
+		return_original=False,
+		**regression_vars,
+		):
+		"""
+		通过回归矫正端子
+		回归自变量暂定中心坐标
+		回归因变量暂定W边的倾斜角，H、W边的长度
+		Parameters
+		----------
+		recs_xy_list：多个rec的四点坐标
+		norm_width：归一化宽度
+		norm_height：归一化高度
+		coef：数据回归前乘比例系数
+		avg：length、rotate_angle是否取两条对边的平均值
+		regression_vars：指定回归变量的字典，格式为
+		--'independent': ['center']
+		--'dependent': ['length_H', 'length_W', 'rotate_angle_W']
+
+		Returns
+		regression_rec_shape_data：rec data字典
+		区别于rec_shape_data，仅包括回归自变量以及回归因变量
+		----------
+		"""
+		def get_regression_data(regression_vars):
+
+			vars_ = {
+				'center': False,
+				'length_W': False,
+				'length_H': False,
+				'rotate_angle_W': False,
+				'rotate_angle_H': False,
+			}
+
+			for key in vars_.keys():
+				if key in regression_vars:
+					vars_[key] =True
+
+			regression_data = _get_train_data(
+				recs_xy_list,
+				norm_width,
+				norm_height,
+				vars_['center'],
+				vars_['length_W'],
+				vars_['length_H'],
+				vars_['rotate_angle_W'],
+				vars_['rotate_angle_H'],
+				coef,
+				avg,
+			)
+			original_regression_data = regression_data.copy()
+			# 修正xy数据
+			if 'center' in regression_vars:
+				if avg:
+					center_index = regression_vars.index('center')
+				else:
+					center_index = 2 * regression_vars.index('center')
+				center_xy_data = regression_data[:, center_index:center_index + 2]
+				new_center_xy_data = Regression._correct_rec_center(center_xy_data)
+				regression_data[:, center_index:center_index + 2] = new_center_xy_data
+
+			return regression_data, original_regression_data
+
+		independent_vars, dependent_vars = (
+			regression_vars['independent'], regression_vars['dependent']
+		)
+		independent_data, dependent_data = (
+			get_regression_data(independent_vars), get_regression_data(dependent_vars)
+		)
+		reg = LinearRegression().fit(independent_data[0], dependent_data[0])
+
+		def extract_array_to_dict(dest_dict, train_data, vars_):
+			for var in vars_:
+				# 每个变量有两维，对应对边
+				start, end = 2 * vars_.index(var), 2 * vars_.index(var) + 2
+				# 认定array格式为n_samples * n_features
+				var_data = train_data[:, start:end]
+				dest_dict[var] = var_data.tolist()
+
+		regression_dependent_data = reg.predict(independent_data[0])
+		regression_rec_shape_data = {}
+		extract_array_to_dict(
+			regression_rec_shape_data, independent_data[0], independent_vars,
+		)
+		extract_array_to_dict(
+			regression_rec_shape_data, regression_dependent_data, dependent_vars,
+		)
+
+		return regression_rec_shape_data
+
+
+class Correction(object):
+
+	min_rec_cnt_to_correct = 3
+
+	# TODO：求平均倾斜角
+	def _get_avg_rotate_angle_H(recs_xy_list):
+		pass
+
+	# TODO：矫正端子，返回矫正后端子数据
+	# TODO：矫正前也许需要先LOF筛选异常值
+	def correct_rec(recs_xy_list):
+		"""
+		对端子数据进行矫正。
+		流程：
+		--1.求pca values
+		--2.依据pca values分组
+		--3.对每组端子回归，回归返回shape data
+		--4.补充H方向倾斜角数据得到最终shape data
+		Parameters
+		----------
+		
+		Returns
+		----------
+		"""
+		corrected_recs_shape_data = [None for i in range(len(recs_xy_list))]
+		pca_values = PCA.get_pca_values(recs_xy_list)
+		divide_groups = PCA.divide_groups(pca_values)
+		index_groups = divide_groups['index']
+		for index_group in index_groups:
+			# 如果个数少于3个，保持原始数据
+			# 否则，通过回归矫正
+			if len(recs_group) < min_rec_cnt_to_correct:
+				for index_ in index_group:
+					xy_list = recs_xy_list[index_]
+					shape_data = RecDataProcessing.RecData.get_rec_shape_data(xy_list)
+					corrected_recs_shape_data[index_] = shape_data
+			else:
+				
+				
+				

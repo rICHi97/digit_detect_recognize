@@ -291,7 +291,8 @@ def LOF(recs_all):
     # print(clf.negative_outlier_factor_)
     # return LOF_data
     return clf.negative_outlier_factor_, LOF_data, rec_data_list
-  
+
+# 10/9完成
  # PCA
 # 输入：框四点坐标list
 # 返回：分类信息
@@ -364,6 +365,7 @@ def get_delta_rec_list(delta_order, pca_rec_list):
             delta_rec_list.append(delta_rec)
         return delta_rec_list
 
+# 10/9完成
 # 对rec列表分组
 # 输入为1阶delta_rec，PCA降维后rec_list
 # 输出为各组rec索引
