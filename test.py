@@ -5,12 +5,15 @@ Created on Thu Sep 30 22:24:20 2021
 @author: LIZHi
 """
 import time
+import os
+import os.path as path
 
 import numpy as np
 from PIL import Image, ImageFont
 
-import recdata_correcting, recdata_processing, recdata_io
-import visualization
+from pkgs.recdata import recdata_correcting, recdata_io, recdata_processing
+from pkgs.tool import image_processing, visualization
+from pkgs.east.data import preprocess
 
 # TODO：矫正后端子四点坐标不对
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
@@ -18,22 +21,71 @@ import visualization
 #       若相差大，怀疑是函数（从shape data得到xy list）有问题
 # 1.jpg：双列 2.png：单列单线 10141，jpg：单列单线
 
+
 test_correct_all_imgs = False
+test_correct_one_img = False
+test_merge_json = False
+test_crop_img = False
+test_label = False
+test_preprocess = True
 
 start = time.process_time()
-txt_name, img_name = '2_original.txt', '2.png'
-img_test_name = '2_test.jpg'
-recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_name)
-original_recs_shape_data = []
-for xy_list in recs_xy_list:
-    rec_shape_data = recdata_processing.Recdata.get_rec_shape_data(xy_list)
-    original_recs_shape_data.append(rec_shape_data)
-img = Image.open(img_name).copy()
-corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
-# visualization.ImgDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
-# visualization.ImgDraw.draw_recs(original_recs_shape_data, img, 2, 'black', True)
-visualization.ImgDraw.draw_recs(corrected_recs_shape_data, img, 2, 'black', True)
-img.save(img_test_name)
+
+img_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\img').replace('\\', '/')
+label_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\txt_合并').replace('\\', '/')
+output_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\裁切结果').replace('\\', '/')
+json1_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\json').replace('\\', '/')
+json2_dir = path.normpath(
+    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_标注铭牌').replace('\\', '/',
+)
+output_dir = path.normpath(
+    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_合并').replace('\\', '/',
+)
+if test_preprocess:
+        
+      preprocess.preprocess()                                            
+                                                  
+if test_label:
+
+    label_files = os.listdir(label_dir)
+    for file in label_files:
+        label_path = path.join(label_dir, file)
+        img_name = file.replace('.txt', '.jpg')
+        img_path = path.join(img_dir, img_name)
+        if not path.exists(img_path):
+            img_name = file.replace('.txt', '.png')
+            img_path = path.join(img_dir, img_name)
+        img = Image.open(img_path)
+        visualization.ImgDraw.draw_recs_by_txt(label_path, img, 2, 'black', True)
+        img.save(path.join(label_dir, img_name))
+
+
+# TODO：检查铭牌标签是否出错
+if test_crop_img:
+
+    # TODO：注意label
+    image_processing.ImageProcess.random_crop(img_dir, label_dir, output_dir, 50, 'number')
+    image_processing.ImageProcess.random_crop(img_dir, label_dir, output_dir, 5, 'plate')
+
+if test_merge_json:
+
+    recdata_io.RecdataIO.merge_json(json1_dir, json2_dir, output_dir, json2_keyword='plate')
+    recdata_io.RecdataIO.json_to_txt(output_dir)
+
+if test_correct_one_img:
+    txt_name, img_name = '2_original.txt', '2.png'
+    img_test_name = '2_test.jpg'
+    recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_name)
+    original_recs_shape_data = []
+    for xy_list in recs_xy_list:
+        rec_shape_data = recdata_processing.Recdata.get_rec_shape_data(xy_list)
+        original_recs_shape_data.append(rec_shape_data)
+    img = Image.open(img_name).copy()
+    corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
+    # visualization.ImgDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+    # visualization.ImgDraw.draw_recs(original_recs_shape_data, img, 2, 'black', True)
+    visualization.ImgDraw.draw_recs(corrected_recs_shape_data, img, 2, 'black', True)
+    img.save(img_test_name)
 
 # 矫正多张图片
 if test_correct_all_imgs:
