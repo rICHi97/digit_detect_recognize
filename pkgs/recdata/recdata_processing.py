@@ -429,3 +429,85 @@ class RecdataProcess(object):
 
         return uniform_edge1, uniform_edge2
 
+    @staticmethod
+    def _shrink_edge(xy_list, new_xy_list, edge, r, theta, ratio):
+
+        if ratio == 0.0:
+            return
+        start_point = edge
+        end_point = (edge + 1) % 4
+        
+        long_start_sign_x = np.sign(xy_list[end_point, 0] - xy_list[start_point, 0])
+        new_xy_list[start_point, 0] = (
+            xy_list[start_point, 0] + 
+            long_start_sign_x * ratio * r[start_point] * np.cos(theta[start_point])
+        )
+            
+        long_start_sign_y = np.sign(xy_list[end_point, 1] - xy_list[start_point, 1])
+        new_xy_list[start_point, 1] = (
+            xy_list[start_point, 1] + 
+            long_start_sign_y * ratio * r[start_point] * np.sin(theta[start_point])
+        )
+            
+        # long edge one, end point
+        long_end_sign_x = -1 * long_start_sign_x
+        new_xy_list[end_point, 0] = (
+            xy_list[end_point, 0] +
+            long_end_sign_x * ratio * r[end_point] * np.cos(theta[start_point])
+        )
+        long_end_sign_y = -1 * long_start_sign_y
+        new_xy_list[end_point, 1] = (
+            xy_list[end_point, 1] +
+            long_end_sign_y * ratio * r[end_point] * np.sin(theta[start_point])   
+        )
+
+    # TODO：研究代码
+    @staticmethod
+    def shrink(xy_list, ratio):    
+    """
+    收缩边
+    Parameters
+    ----------
+
+    Returns
+    ----------
+    """
+
+        if ratio == 0.0:
+            return xy_list, xy_list
+        # TODO：距离计算利用已有api
+        # 四个向量，分别为V21, V32, V43, V14 
+        diff_1to3 = xy_list[:3, :] - xy_list[1:4, :]
+        diff_4 = xy_list[3:4, :] - xy_list[0:1, :]
+        diff = np.concatenate((diff_1to3, diff_4), axis=0)
+        # 四向量长度
+        dis = np.sqrt(np.sum(np.square(diff), axis=-1))
+
+        # 选择最长边
+        '''
+        重排为[V1  V2
+              V3   V4]
+        沿axis = 0 相加，也就是选出最长的一组对边
+        事实上xy_list已经经过重排，长边所在组已经固定
+        '''
+        # long_edge = int(np.argmax(np.sum(np.reshape(dis, (2, 2)), axis=0)))
+        long_edge = 1
+        short_edge = 1 - long_edge
+        # 领边中的短边
+        r = [np.minimum(dis[i], dis[(i + 1) % 4]) for i in range(4)]
+        # cal theta array
+        diff_abs = np.abs(diff)
+        # 避免0
+        diff_abs[:, 0] += cfg.epsilon
+        theta = np.arctan(diff_abs[:, 1] / diff_abs[:, 0])
+
+        # shrink two long edges
+        temp_new_xy_list = np.copy(xy_list)
+        RecdataProcess._shrink_edge(xy_list, temp_new_xy_list, long_edge, r, theta, ratio)
+        RecdataProcess._shrink_edge(xy_list, temp_new_xy_list, long_edge + 2, r, theta, ratio)                            
+        # shrink two short edges
+        new_xy_list = np.copy(temp_new_xy_list)
+        RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge, r, theta, ratio)
+        RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, ratio)
+
+        return temp_new_xy_list, new_xy_list, long_edge      

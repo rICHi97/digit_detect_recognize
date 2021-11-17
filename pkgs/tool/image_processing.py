@@ -23,6 +23,7 @@ class ImageProcess(object):
     用于处理图片
     """
     coef_x_len, coef_y_len = 0.23, 0.02
+    
     @staticmethod
     def dump_rotate_img(img, xy_list):
         """

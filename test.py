@@ -13,8 +13,9 @@ from PIL import Image, ImageFont
 
 from pkgs.recdata import recdata_correcting, recdata_io, recdata_processing
 from pkgs.tool import image_processing, visualization
-from pkgs.east.data import preprocess
+from pkgs.east import east_data
 
+EastProcess = east_data.EastPreprocess
 # TODO：矫正后端子四点坐标不对
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
 # TODO：选取三种类型的端子各一张进行测试，可以将矫正shape data与原始shape data比对
@@ -27,7 +28,7 @@ test_correct_one_img = False
 test_merge_json = False
 test_crop_img = False
 test_label = False
-test_preprocess = True
+test_east_data = True
 
 start = time.process_time()
 
@@ -36,14 +37,15 @@ label_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注�
 output_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\裁切结果').replace('\\', '/')
 json1_dir = path.normpath(r'D:\各种文件\图像识别\端子排数据\标注整个边框\json').replace('\\', '/')
 json2_dir = path.normpath(
-    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_标注铭牌').replace('\\', '/',
+    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_标注铭牌').replace('\\', '/')
 )
 output_dir = path.normpath(
-    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_合并').replace('\\', '/',
+    r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_合并').replace('\\', '/')
 )
-if test_preprocess:
+if test_east_data:
         
-      preprocess.preprocess()                                            
+      EastPreprocess.preprocess()
+      EastPreprocess.label()
                                                   
 if test_label:
 
@@ -58,7 +60,6 @@ if test_label:
         img = Image.open(img_path)
         visualization.ImgDraw.draw_recs_by_txt(label_path, img, 2, 'black', True)
         img.save(path.join(label_dir, img_name))
-
 
 # TODO：检查铭牌标签是否出错
 if test_crop_img:

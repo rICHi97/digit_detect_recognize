@@ -21,8 +21,11 @@ from ..tool import visualization
 
 LinearRegression = linear_model.LinearRegression
 PCA_ = decomposition.PCA
-EPSILON = 1e-4
 
+RecdataProcess = recdata_processing.Recdata
+RecdataProcess = recdata_processing.RecdataProcess
+
+EPSILON = 1e-4
 _filter_nan_data = lambda data_list: [data for data in data_list if not math.isnan(data)]
 
 def _get_train_data(
@@ -65,14 +68,14 @@ def _get_train_data(
 
         data_list = []
         # 归一化
-        xy_list = recdata_processing.RecdataProcess.from_42_to_18(xy_list)
+        xy_list = RecdataProcess.from_42_to_18(xy_list)
         if norm_width is not None and norm_height is not None:
             for i in range(4):
                 xy_list[2 * i] /= norm_width
                 xy_list[2 * i + 1] /= norm_height
 
         # 获取形状数据
-        shape_data = recdata_processing.Recdata.get_rec_shape_data(
+        shape_data = Recdata.get_rec_shape_data(
             xy_list,
             center,
             length_W,
@@ -496,7 +499,7 @@ class Correction(object):
 
         rotate_angle_H1_list, rotate_angle_H2_list = [], []
         for xy_list in recs_xy_list:  #pylint: disable=E1133
-            rotate_angle_H_dict = recdata_processing.Recdata.get_rec_shape_data(
+            rotate_angle_H_dict = Recdata.get_rec_shape_data(
                 xy_list,
                 center=False,
                 length_W=False,
@@ -556,7 +559,7 @@ class Correction(object):
             if len(index_group) < Correction.min_rec_cnt_to_correct:
                 for index_ in index_group:
                     xy_list = recs_xy_list[index_]  #pylint: disable=E1136
-                    shape_data = recdata_processing.Recdata.get_rec_shape_data(xy_list)
+                    shape_data = Recdata.get_rec_shape_data(xy_list)
                     corrected_recs_shape_data[index_] = shape_data
             else:
                 recs_group = [recs_xy_list[i] for i in index_group]  #pylint: disable=E1136

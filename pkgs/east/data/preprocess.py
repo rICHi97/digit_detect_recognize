@@ -180,6 +180,7 @@ def preprocess():
     train_val_set = []
     # tqdm是进度条
     # o_img_fname为数据集中图片名
+    
     for o_img_fname, _ in zip(o_img_list, tqdm(range(len(o_img_list)))): 
         # with open(os.path.join(origin_txt_dir,
         #                    o_img_fname[:-4] + '.txt'), 'r', encoding="UTF-8") as f:
