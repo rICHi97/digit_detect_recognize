@@ -1,5 +1,10 @@
-
 *.ttf
-1.jpg
-1_original.txt
-1_test.jpg
+*.jpg
+*.png
+*.txt
+*.npy
+*.jpg
+*.txt
+*.jpg
+*.jpg
+*.txt

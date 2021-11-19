@@ -464,15 +464,14 @@ class RecdataProcess(object):
     # TODO：研究代码
     @staticmethod
     def shrink(xy_list, ratio):    
-    """
-    收缩边
-    Parameters
-    ----------
-
-    Returns
-    ----------
-    """
-
+        """
+        收缩边
+        Parameters
+        ----------
+    
+        Returns
+        ----------
+        """
         if ratio == 0.0:
             return xy_list, xy_list
         # TODO：距离计算利用已有api
@@ -498,7 +497,7 @@ class RecdataProcess(object):
         # cal theta array
         diff_abs = np.abs(diff)
         # 避免0
-        diff_abs[:, 0] += cfg.epsilon
+        diff_abs[:, 0] += EPSILON
         theta = np.arctan(diff_abs[:, 1] / diff_abs[:, 0])
 
         # shrink two long edges

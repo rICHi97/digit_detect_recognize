@@ -12,11 +12,12 @@ import random
 import cv2
 import numpy as np
 from PIL import Image
+from shapely import geometry
 
 from ..recdata import recdata_processing
 
 EPSILON = 1e-4
-
+Polygon = geometry.Polygon
 
 class ImageProcess(object):
     """
@@ -88,16 +89,21 @@ class ImageProcess(object):
         return img_rec
 
     # TODO：主要花费时间为crop和save，后续尝试优化
+    # TODO：当某个label不完全存在裁切区域内，计算iou，大于阈值称为边界label
+    #       当边界label数量大于完全裁切label一定比例时
+    # TODO：根据img大小自适应裁切次数
     @staticmethod
-    def random_crop(img, label, output_dir, count, label_keyword):
+    def random_crop(img, label, output_dir, count, boundary_thres, boundary_ratio, label_keyword):
         """
         随机裁切图片，检查标签是否在裁切区域内
         Parameters
         ----------
-        img：img路径或文件夹
+        img：img路径或文件夹（11/18，目前仅支持裁切文件夹中图片）
         label：label txt路径或文件夹
         output_dir：输出路径
         count：裁切次数
+        boundary_thres：若相交部分占label大于boundary_thres，就视为边界label
+        boundary_ratio：若边界label / 内部label > boundary_ratio，就舍弃该次裁切
         label_keyword：label必须包含的关键字
 
         Returns
@@ -181,18 +187,26 @@ class ImageProcess(object):
                 return
 
             i = 0
-            while i < count:
-                # TODO：多次打开，是否能优化
-                img = Image.open(img_file_path)
-                width, height = img.size[0], img.size[1]
+            img = Image.open(img_file_path)
+            width, height = img.size[0], img.size[1]
 
+            while i < count:
+                
                 random_label_line = random.choice(label_lines)
                 random_label_region = get_region(random_label_line)
-                # TODO：crop region可能出错
                 crop_region = from_label_get_crop_region(random_label_region, width, height)
-
+                _ = [
+                        crop_region[0], crop_region[1], 
+                        crop_region[2], crop_region[1], 
+                        crop_region[2], crop_region[3], 
+                        crop_region[0], crop_region[3],
+                    ]
+                c = Polygon(np.array(_).reshape((4, 2)))
                 crop_lines = []
+                cnt_interior, cnt_boundary = 0, 0
                 # TODO：需要遍历所有标签，可能需要优化
+                # 三类标签：内部，边界，外部
+                # 如果一张图片包含了太多边界标签，就舍去
                 for label_line in original_label_lines:
                 # for label_line in label_lines:
                     label_region, label = get_region(label_line), get_label(label_line)
@@ -200,6 +214,15 @@ class ImageProcess(object):
                         new_label_region = update_label_region(label_region, crop_region)
                         crop_line = get_label_line(new_label_region, label)
                         crop_lines.append(crop_line)
+                        cnt_interior += 1
+                    # 计算label有多少部分在裁切区域内
+                    else:
+                        l = Polygon(np.array(label_region).reshape((4, 2)))
+                        inter = Polygon(c).intersection(Polygon(l)).area
+                        if (inter / l.area) > boundary_thres:
+                            cnt_boundary += 1
+                if cnt_boundary > boundary_ratio * cnt_interior:
+                    continue
 
                 nonlocal img_file, get_filename
                 filename = get_filename(img_file)
@@ -207,11 +230,7 @@ class ImageProcess(object):
                 output_img_path = path.join(output_dir, output_name + '.jpg')
                 output_label_path = path.join(output_dir, output_name + '.txt')
                 img_crop = img.crop(crop_region)
-                # TODO：铭牌裁切会超出范围，检测label是否有问题
-                try:
-                    img_crop.save(output_img_path)
-                except SystemError:
-                    continue
+                img_crop.save(output_img_path)
                 with open(output_label_path, 'w', encoding='utf-8') as f:
                     f.writelines(crop_lines)
 

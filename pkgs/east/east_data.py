@@ -4,6 +4,10 @@ Created on 2021-11-10 01:00:14
 
 @author: Li Zhi
 """
+
+"""
+本模块用以进行east网络的数据处理，包括预处理和产生标签，data_generator；
+"""
 import math
 import os
 from os import path
@@ -13,10 +17,12 @@ import numpy as np
 import tqdm
 from PIL import Image, ImageDraw
 
-import cfg
-from .recdata import recdata_processing
+from . import cfg
+from ..recdata import recdata_processing
 
+Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
+tqdm = tqdm.tqdm
 
 def _get_W_H_ratio(xy_list):
     """
@@ -29,7 +35,7 @@ def _get_W_H_ratio(xy_list):
     ----------
     W_H_ratio：宽高比
     """
-    rec_shape_data = RecdataProcess.get_rec_shape_data(
+    rec_shape_data = Recdata.get_rec_shape_data(
         xy_list, 
         center=False,
         length_W=True,
@@ -100,7 +106,6 @@ def _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge):
     return nth
 
 
-# TODO：参数设置于cfg文件中
 class EastPreprocess(object):
     """
     本类用于预处理数据，包括预处理及生成标签
@@ -161,7 +166,7 @@ class EastPreprocess(object):
             print(f'原始图片共{len(origin_img_list)}张。')
 
         train_val_set = []
-        d_width, d_height = max_train_img_size    
+        d_width, d_height = max_train_img_size, max_train_img_size
         for origin_img_name, _ in zip(origin_img_list, tqdm(range(len(origin_img_list)))):  #pylint: disable=E1102
 
             origin_img_path = path.join(origin_img_dir, origin_img_name)
