@@ -110,6 +110,37 @@ class EastPreprocess(object):
     """
     本类用于预处理数据，包括预处理及生成标签
     """
+    @staticmethod
+    def resize_img(img, max_img_size=cfg.max_train_img_size):
+        """
+
+        Parameters
+        ----------
+
+        Returns
+        ----------
+        """
+        img_width = min(img.width, max_img_size)
+        # if img_width == max_img_size < img.width  起到and作用
+        # TODO：判断似乎多余，如果等于max_img_size，就说明max_img_size <= img.width
+        # 首先确定resize后width，为实际尺寸和最大允许尺寸中较小的
+        # 若为最大尺寸，则调整height，但调整后height不一定满足要求，要二次调整
+        if img_width == max_img_size:
+            ratio = img_width / img.width
+            img_height = int(ratio * img.height)
+        else:
+            img_height = img.height
+
+        o_height = min(img_height, max_img_size)
+        if o_height == max_img_size:
+            ratio = o_height / img_height
+            o_width = int(ratio * img_width)
+        else:                             
+            o_width = img_width
+        d_width, d_height = o_width - (o_width % 32), o_height - (o_height % 32)
+
+        return d_width, d_height
+
     # TODO：默认参数设置cfg
     @staticmethod
     def preprocess(
@@ -373,4 +404,116 @@ class EastPreprocess(object):
                     img.save(label_img_path)
 
             np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), groung_truth)
+
+def _should_merge(region, i, j):
+
+    neighbor = {(i, j - 1)}
+    # 判断region是否包含有neighbor元素，不包含返回true
+
+    return not region.isdisjoint(neighbor)   
+
+def _region_neighbor(region_set):
+    region_pixels = np.array(list(region_set))
+    j_min = np.amin(region_pixels, axis=0)[1] - 1
+    j_max = np.amax(region_pixels, axis=0)[1] + 1
+    i_m = np.amin(region_pixels, axis=0)[0] + 1
+    region_pixels[:, 0] += 1
+    neighbor = {(region_pixels[n, 0], region_pixels[n, 1]) for n in
+                range(len(region_pixels))}
+    neighbor.add((i_m, j_min))
+    neighbor.add((i_m, j_max))
+    return neighbor
+
+def _region_group(region_list):
+    S = [i for i in range(len(region_list))]
+    D = []
+    while len(S) > 0:
+        m = S.pop(0)
+        if len(S) == 0:
+            # S has only one element, put it to D
+            D.append([m])
+        else:
+            D.append(_rec_region_merge(region_list, m, S))
+    return D
+
+def _rec_region_merge(region_list, m, S):
+    rows = [m]
+    tmp = []
+    for n in S:
+        if not _region_neighbor(region_list[m]).isdisjoint(region_list[n]) or \
+                not _region_neighbor(region_list[n]).isdisjoint(region_list[m]):
+            # 第m与n相交
+            tmp.append(n)
+    for d in tmp:
+        S.remove(d)
+    for e in tmp:
+        rows.extend(_rec_region_merge(region_list, e, S))
+    return rows
+
+class EastData(object):
+
+    @staticmethod
+    def sigmoid(x):
+        """
+        Parameters:
+        x：array
+
+        Returns:
+        y：y = 1 / (1 + exp(-x))
+        """
+        y = 1 / (1 + np.exp(-x))
+        return y
+
+    @staticmethod
+    def nms(
+        predict, 
+        activation_pixels, 
+        side_vertex_pixel_threshold=cfg.side_vertex_pixel_threshold,
+        trunc_threshold=cfg.trunc_threshold,
+        ):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        region_list = []
+        # 形成多行region_list
+        for i, j in zip(activation_pixels[0], activation_pixels[1]):
+            merge = False
+            for region in enumerate(region_list):
+                if _should_merge(region, i, j):
+                    region.add((i, j))
+                    merge = True
+
+            if not merge:
+                region_list.append({(i, j)})
+
+        D = _region_group(region_list)
+        quad_list = np.zeros((len(D), 4, 2))
+        score_list = np.zeros((len(D), 4))
+        for group, g_th in zip(D, range(len(D))):
+            total_score = np.zeros((4, 2))
+            for row in group:
+                for ij in region_list[row]:
+                    score = predict[ij[0], ij[1], 1]
+                    # 如果是边界像素
+                    if score >= side_vertex_pixel_threshold:
+                        # ith_score表示头或尾
+                        ith_score = predict[ij[0], ij[1], 2:3]
+                        if not trunc_threshold <= ith_score < 1 - trunc_threshold:
+                            # TODO：四舍五入ith=0/1表示头/尾
+                            ith = int(np.around(ith_score))
+                            # score为是否为边界像素得分
+                            total_score[ith * 2 : (ith + 1) * 2] += score
+                            px = (ij[1] + 0.5) * cfg.pixel_size
+                            py = (ij[0] + 0.5) * cfg.pixel_size
+                            p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 3:7], (2, 2))
+                            quad_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
+            score_list[g_th] = total_score[:, 0]
+            quad_list[g_th] /= (total_score + cfg.epsilon)
+
+        return score_list, quad_list
             
+

@@ -13,9 +13,10 @@ from PIL import Image, ImageFont
 
 from pkgs.recdata import recdata_correcting, recdata_io, recdata_processing
 from pkgs.tool import image_processing, visualization
-from pkgs.east import east_data
+from pkgs.east import east_data, east_net
 
 EastPreprocess = east_data.EastPreprocess
+EastNet = east_net.EastNet
 # TODO：矫正后端子四点坐标不对
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
 # TODO：选取三种类型的端子各一张进行测试，可以将矫正shape data与原始shape data比对
@@ -26,9 +27,9 @@ EastPreprocess = east_data.EastPreprocess
 test_correct_all_imgs = False
 test_correct_one_img = False
 test_merge_json = False
-test_crop_img = True
+test_crop_img = False
 test_label = False
-test_east_data = False
+test_east_data = True
 
 start = time.process_time()
 
@@ -44,7 +45,9 @@ json2_dir = path.normpath(
 # ).replace('\\', '/')
 if test_east_data:
         
-      EastPreprocess.preprocess()
+      # EastPreprocess.preprocess()
+      east = EastNet()
+      east.predict()
                                              
 if test_label:
 

@@ -3,8 +3,4 @@
 *.png
 *.txt
 *.npy
-*.jpg
-*.txt
-*.jpg
-*.jpg
-*.txt
+/source/

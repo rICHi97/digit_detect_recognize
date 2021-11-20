@@ -80,12 +80,21 @@ class RecdataIO(object):
         """
         Parameters
         ----------
-        
+        recs_xy_list：多个rec的四点坐标
+        txt_dir：输出txt文件夹
+        txt_name：输出txt名字
+
         Returns
         ----------
         """
-        # TODO
-        pass
+        lines = []
+        for xy_list in recs_xy_list:
+            line = ','.join([f'{xy:.2}' for xy in xy_list])
+            line += '\n'
+            lines.append(line)
+        txt_path = path.join(txt_dir, txt_name)
+        with open(txt_path, 'w', encoding='utf-8') as t:
+            t.writelines(lines)
 
     # TODO：仅转换单个json文件
     @staticmethod
