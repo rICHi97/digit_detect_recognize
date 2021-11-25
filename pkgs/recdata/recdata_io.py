@@ -3,9 +3,6 @@
 Created on 2021-09-29 20:08:09
 
 @author: Li Zhi
-"""
-
-"""
 本模块用以实现数据的输入输出，包括从txt文件读取rec数据，将rec数据保存到txt等
 一个rec的四个端点：xy_list
 一张图片的多个rec的端点：recs_xy_list
@@ -89,7 +86,7 @@ class RecdataIO(object):
         """
         lines = []
         for xy_list in recs_xy_list:
-            line = ','.join([f'{xy:.2}' for xy in xy_list])
+            line = ','.join([f'{xy:.2f}' for xy in xy_list])
             line += '\n'
             lines.append(line)
         txt_path = path.join(txt_dir, txt_name)

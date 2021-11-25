@@ -13,16 +13,29 @@ import os
 from os import path
 import random
 
+from keras import applications, callbacks, preprocessing
 import numpy as np
-import tqdm
 from PIL import Image, ImageDraw
+import tqdm
+from tensorflow.compat import v1
 
 from . import cfg
 from ..recdata import recdata_processing
 
+preprocess_input = applications.vgg16.preprocess_inputtqdm = tqdm.tqdm
+EarlyStopping = callbacks.EarlyStopping
+LearningRateScheduler = callbacks.LearningRateScheduler
+ModelCheckpoint = callbacks.ModelCheckpoint
+ReduceLROnPlateau = callbacks.ReduceLROnPlateau
+TensorBoard = callbacks.TensorBoard
+cast = v1.cast
+equal = v1.equal
+reduce_mean = v1.reduce_mean
+reduce_sum = v1.reduce_sum
+sigmoid = v1.nn.sigmoid
+
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
-tqdm = tqdm.tqdm
 
 def _get_W_H_ratio(xy_list):
     """
@@ -157,7 +170,7 @@ class EastPreprocess(object):
         val_ratio=cfg.val_ratio,
         val_filename=cfg.val_filename,
         train_filename=cfg.train_filename,
-        verbose=False,
+        verbose=cfg.preprocess_verbose,
     ):
         """
         统一端点顺序
@@ -311,7 +324,7 @@ class EastPreprocess(object):
         pixel_size=cfg.pixel_size,
         val_filename=cfg.val_filename,
         train_filename=cfg.train_filename,
-        verbose=False,
+        verbose=cfg.preprocess_verbose,
     ):
         """
         产生标签文件
@@ -410,7 +423,7 @@ def _should_merge(region, i, j):
     neighbor = {(i, j - 1)}
     # 判断region是否包含有neighbor元素，不包含返回true
 
-    return not region.isdisjoint(neighbor)   
+    return not region.isdisjoint(neighbor)
 
 def _region_neighbor(region_set):
     region_pixels = np.array(list(region_set))
@@ -452,6 +465,9 @@ def _rec_region_merge(region_list, m, S):
 
 class EastData(object):
 
+    early_stopping_patience = 6
+
+
     @staticmethod
     def sigmoid(x):
         """
@@ -466,23 +482,29 @@ class EastData(object):
 
     @staticmethod
     def nms(
-        predict, 
-        activation_pixels, 
+        predict,
+        activation_pixels,
         side_vertex_pixel_threshold=cfg.side_vertex_pixel_threshold,
         trunc_threshold=cfg.trunc_threshold,
-        ):
+    ):
         """
+        对预测结果非最大抑制。
         Parameters
         ----------
-        
+        predict：Keras.Model.predict返回array的元素
+        activation_pixels：predict中大于threshold的像素
+        side_vertext_pixel_threshold：边界像素阈值
+        trunc_threshold：头尾像素阈值
+
         Returns
         ----------
+        score_list，rec_list：nms后多个rec四点得分list，nms后多个rec四点坐标
         """
         region_list = []
         # 形成多行region_list
         for i, j in zip(activation_pixels[0], activation_pixels[1]):
             merge = False
-            for region in enumerate(region_list):
+            for region in region_list:
                 if _should_merge(region, i, j):
                     region.add((i, j))
                     merge = True
@@ -491,7 +513,7 @@ class EastData(object):
                 region_list.append({(i, j)})
 
         D = _region_group(region_list)
-        quad_list = np.zeros((len(D), 4, 2))
+        rec_list = np.zeros((len(D), 4, 2))
         score_list = np.zeros((len(D), 4))
         for group, g_th in zip(D, range(len(D))):
             total_score = np.zeros((4, 2))
@@ -510,10 +532,187 @@ class EastData(object):
                             px = (ij[1] + 0.5) * cfg.pixel_size
                             py = (ij[0] + 0.5) * cfg.pixel_size
                             p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 3:7], (2, 2))
-                            quad_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
+                            rec_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
             score_list[g_th] = total_score[:, 0]
-            quad_list[g_th] /= (total_score + cfg.epsilon)
+            rec_list[g_th] /= (total_score + cfg.epsilon)
 
-        return score_list, quad_list
-            
+        return score_list, rec_list
+        
+    @staticmethod
+    def generator(
+        batch_size=cfg.batch_size,
+        data_dir=cfg.data_dir,
+        is_val=False,
+        train_img_dir=cfg.train_img_dir,
+        train_label_dir=cfg.train_label_dir,
+        train_filename=cfg.train_filename,
+        val_filename=cfg.val_filename,
+        num_channels=cfg.num_channels,
+        max_train_img_size=cfg.max_train_img_size,
+        pixel_size=cfg.pixel_size,
+    ):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        img_h, img_w = max_train_img_size, max_train_img_size
+        x = np.zeros((batch_size, img_h, img_w, num_channels), dtype=np.float32)
+        pixel_num_h = img_h // pixel_size   # fixme 以4*4个像素点为一格 预测值score
+        pixel_num_w = img_w // pixel_size
+        y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
+        if is_val:
+            with open(os.path.join(data_dir, val_filename), 'r') as f_val:
+                f_list = f_val.readlines()
+        else:
+            with open(os.path.join(data_dir, train_filename), 'r') as f_train:
+                f_list = f_train.readlines()
+        while True:
+            for i in range(batch_size):
+                # random gen an image name
+                random_img = np.random.choice(f_list)
+                # strip移除头尾字符 默认是空格或换行符
+                img_filename = str(random_img).strip().split(',')[0]
+                # load img and img anno
+                img_path = os.path.join(data_dir, train_img_dir, img_filename)
+                img = preprocessing.image.load_img(img_path)
+                img = preprocessing.image.img_to_array(img)
+                x[i] = preprocess_input(img, mode='tf')
+                gt_file = os.path.join(data_dir, train_label_dir, img_filename[:-4] + '_gt.npy')
+                y[i] = np.load(gt_file)
+            yield x, y
+    
+    @staticmethod
+    def rec_loss(
+        y_true,
+        y_pred,
+        epsilon=cfg.epsilon,
+        lambda_inside_score_loss=cfg.lambda_inside_score_loss,
+        lambda_side_vertex_code_loss=cfg.lambda_side_vertex_code_loss,
+        lambda_side_vertex_coord_loss=cfg.lambda_side_vertex_coord_loss,
+    ):
+        """
+        Parameters
+        ----------
+       
+        Returns
+        ----------
+        """
+        # L2 distance
+        def quad_norm(g_true):
+            shape = v1.shape(g_true)
+            delta_xy_matrix = v1.reshape(g_true, [-1, 2, 2])
+            diff = delta_xy_matrix[:, 0:1, :] - delta_xy_matrix[:, 1:2, :]
+            square = v1.math.square(diff)
+            distance = v1.math.sqrt(reduce_sum(square, axis=-1))
+            distance *= 4.0
+            distance += epsilon
 
+            return v1.reshape(distance, shape[:-1])
+
+        def smooth_l1_loss(prediction_tensor, target_tensor, weights):
+            n_q = v1.reshape(quad_norm(target_tensor), v1.shape(weights))
+            diff = prediction_tensor - target_tensor
+            abs_diff = v1.math.abs(diff)
+            abs_diff_lt_1 = v1.math.less(abs_diff, 1)
+            # （abs_didd - 0.5） 使用了L1距离计算方式 曼哈顿距离计算
+            pixel_wise_smooth_l1norm = (
+                reduce_sum(
+                    v1.where(abs_diff_lt_1, 0.5 * v1.math.square(abs_diff), abs_diff - 0.5), 
+                    axis=-1,
+                ) / n_q * weights
+            )
+
+            return pixel_wise_smooth_l1norm
+
+        # loss for inside_score
+        logits = y_pred[:, :, :, :1]
+        labels = y_true[:, :, :, :1]
+        # balance positive and negative samples in an image
+        beta = 1 - reduce_mean(labels)
+        # first apply sigmoid activation
+        predicts = sigmoid(logits)
+        # log + epsilon for stable cal
+        inside_score_loss = reduce_mean(
+            -1 * (beta * labels * v1.math.log(predicts + epsilon) +
+            (1 - beta) * (1 - labels) * v1.math.log(1 - predicts + epsilon))
+        )
+        inside_score_loss *= lambda_inside_score_loss
+
+        # loss for side_vertex_code
+        # fixme class-balanced cross-entropy 处理正负样本不均衡问题
+        vertex_logits = y_pred[:, :, :, 1:3]
+        vertex_labels = y_true[:, :, :, 1:3]
+        vertex_beta = 1 - (reduce_mean(y_true[:, :, :, 1:2]) / (reduce_mean(labels) + epsilon))
+        vertex_predicts = sigmoid(vertex_logits)
+        pos = -1 * vertex_beta * vertex_labels * v1.math.log(vertex_predicts + epsilon)
+        neg = -1 * (
+            (1 - vertex_beta) * (1 - vertex_labels) * v1.math.log(1 - vertex_predicts + epsilon)
+        )
+        positive_weights = cast(v1.equal(y_true[:, :, :, 0], 1), v1.dtypes.float32)
+        side_vertex_code_loss = (
+            reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) /
+            (reduce_sum(positive_weights) + epsilon)
+        )
+        side_vertex_code_loss *= lambda_side_vertex_code_loss
+
+        # loss for side_vertex_coord delta
+        # fixme 所有的边界像素预测值的加权平均来预测头或尾的短边两端的两个顶点
+        # smoothed L1 loss
+        g_hat = y_pred[:, :, :, 3:]
+        g_true = y_true[:, :, :, 3:]
+        vertex_weights = cast(v1.equal(y_true[:, :, :, 1], 1), v1.dtypes.float32)
+        pixel_wise_smooth_l1norm = smooth_l1_loss(g_hat, g_true, vertex_weights)
+        side_vertex_coord_loss = (
+            reduce_sum(pixel_wise_smooth_l1norm) /
+            (reduce_sum(vertex_weights) + epsilon)
+        )
+        side_vertex_coord_loss *= lambda_side_vertex_coord_loss
+
+        return inside_score_loss + side_vertex_code_loss + side_vertex_coord_loss
+
+    @staticmethod
+    def callbacks(type_=None,
+        early_stopping_patience=cfg.early_stopping_patience,
+        early_stopping_verbose=cfg.early_stopping_verbose,
+        check_point_filepath=cfg.check_point_filepath,
+        check_point_period=cfg.check_point_period,
+        check_point_verbose=check_point_verbose,
+        reduce_lr_monitor=cfg.reduce_lr_monitor,
+        reduce_lr_factor=cfg.reduce_lr_factor,
+        reduce_lr_patience=cfg.reduce_lr_patience,
+        reduce_lr_verbose=cfg.reduce_lr_verbose,
+        reduce_lr_min_lr=cfg.reduce_lr_min_lr,
+        # TODO：tensorboard
+    ):
+        """
+        Parameters
+        ----------  
+        Returns
+        ----------
+        """
+        if type_ not in ['early_stopping', 'check_point', 'reduce_lr']:
+            return
+        if type_ == 'early_stopping':
+            callback = EarlyStopping(early_stopping_patience, early_stopping_verbose)
+        elif type_ == 'check_point':
+            # TODO：默认monitor
+            callback = ModelCheckpoint(
+                filepath=check_point_filepath, 
+                save_best_only=True,
+                save_weights_only=True,
+                period=check_point_period,
+                verbose=check_point_verbose,
+            )
+        elif type_ == 'reduce_lr':
+            callback = ReduceLROnPlateau(
+                monitor=reduce_lr_monitor,
+                factor=reduce_lr_factor,
+                patience=reduce_lr_patience,
+                verbose=reduce_lr_verbose,
+                min_lr=reduce_lr_min_lr,
+            )
+
+        return callback

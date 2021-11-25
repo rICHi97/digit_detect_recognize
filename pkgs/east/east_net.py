@@ -11,9 +11,10 @@ Created on 2021-11-19 00:36:11
 import os
 from os import path
 
-from keras import  applications, callbacks, layers, optimizers, preprocessing, Input, Model
+from keras import  applications, layers, optimizers, preprocessing, Input, Model
 import numpy as np
-import tensorflow
+from PIL import Image
+from tensorflow.compat import v1
 
 from . import cfg
 from . import east_data
@@ -21,11 +22,6 @@ from ..recdata import recdata_io
 
 VGG16 = applications.vgg16.VGG16
 preprocess_input = applications.vgg16.preprocess_input
-EarlyStopping = callbacks.EarlyStopping
-LearningRateScheduler = callbacks.LearningRateScheduler
-ModelCheckpoint = callbacks.ModelCheckpoint
-ReduceLRonPlateau = callbacks.ReduceLROnPlateau
-TensorBoard = callbacks.TensorBoard
 regularizers = layers.regularizers
 BatchNormalization = layers.BatchNormalization
 Concatenate = layers.Concatenate
@@ -33,13 +29,14 @@ Conv2D = layers.Conv2D
 UpSampling2D = layers.UpSampling2D
 # image = preprocessing.image  容易混淆
 Adam = optimizers.Adam
-Session = tensorflow.Session
-logging = tensorflow.logging
-ConfigProto = tensorflow.ConfigProto
+Session = v1.Session
+logging = v1.logging
+ConfigProto = v1.ConfigProto
 
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 RecdataIO = recdata_io.RecdataIO
+
 
 def _init_environ():
 
@@ -50,9 +47,9 @@ def _init_environ():
     logging.set_verbosity(logging.ERROR)
     config = ConfigProto()
     config.allow_soft_placement = True
-    config.gpu_options.per_process_gpu_memory_fraction = 0.8
-    config.gpu_options.allow_growth = True
-    session = Session(config=config)    
+    config.gpu_options.per_process_gpu_memory_fraction = 0.8  #pylint: disable=E1101
+    config.gpu_options.allow_growth = True  #pylint: disable=E1101
+    session = Session(config=config)
 
 
 class EastNet(object):
@@ -131,21 +128,58 @@ class EastNet(object):
             Concatenate(axis=-1, name='east_detect')([inside_score, side_v_code, side_v_coord])
         )
 
-        return Model(inputs=self.input_img, outputs=east_detect)        
+        return Model(inputs=self.input_img, outputs=east_detect)  
 
-    @staticmethod
-    def train():
-        pass
+    def train(
+        self,
+        summary=cfg.summary,
+        lr=cfg.lr,
+        decay=cfg.decay,
+        train_generator=EastData.generator,
+        steps_per_epoch=cfg.steps_per_epoch,
+        epoch_num=cfg.epoch_num,
+        verbose=cfg.train_verbose,
+        callbacks=None,
+        val_generator=EastData.generator,
+        val_steps=cfg.val_steps,
+        save_weights_dir=cfg.save_weights_dir,
+    ):
+        """
+        Parameters
+        ----------
+
+        Returns
+        ----------
+        """
+        if summary:
+            self.east_model.summary()
+        # TODO：研究Adam优化器
+        self.east_model.compile(
+            loss=EastData.rec_loss,
+            optimizer=Adam(lr, decay),
+        )
+        # TODO：新版的keras貌似已经在fit中集成了fit_generator功能，有待研究
+        self.east_model.fit_generator(
+            train_generator(),
+            steps_per_epoch,
+            epoch_num,
+            verbose,
+            callbacks,
+            val_generator(is_val=True),
+            val_steps,
+        )
+        self.east_model.save_weights(save_weights_dir)
 
     # TODO：对于尺寸较大的图片，先裁切再predict
     # TODO：支持对单张图片predict
+    # TODO：terminal_23识别有问题
     def predict(
-        self, 
-        east_weights_file_path=cfg.east_weights_file_path, 
-        img_dir=cfg.img_dir, 
+        self,
+        east_weights_file_path=cfg.east_weights_file_path,
+        img_dir=cfg.img_dir,
         output_txt_dir=cfg.output_txt_dir,
-        max_predict_img_size=cfg.max_predict_img_size, 
-        show_predict_img=cfg.show_predict_img, 
+        max_predict_img_size=cfg.max_predict_img_size,
+        show_predict_img=cfg.show_predict_img,
         predict_img_dir=cfg.predict_img_dir,
         num_img=cfg.num_img,
         pixel_threshold=cfg.pixel_threshold,
@@ -168,14 +202,15 @@ class EastNet(object):
             img = preprocessing.image.load_img(img_path).convert('RGB')
             d_width, d_height = EastPreprocess.resize_img(img, max_predict_img_size)
             scale_ratio_w, scale_ratio_h = img.width / d_width, img.height / d_height
+            img = img.resize((d_width, d_height), Image.BICUBIC)
 
             array_img = preprocessing.image.img_to_array(img)
             # 封装多张图片，但在此只封装一张
-            array_img_all = np.zeros((num_img, d_width, d_height, 3))
+            array_img_all = np.zeros((num_img, d_height, d_width, 3))
             array_img_all[0] = array_img
 
             tf_img = preprocess_input(array_img, mode='tf')
-            x = np.zeros((num_img, d_width, d_height, 3))
+            x = np.zeros((num_img, d_height, d_width, 3))
             x[0] = tf_img
             y_pred = self.east_model.predict(x)
 

@@ -83,16 +83,18 @@ class ImgDraw(object):
         for xy_list_or_shape_data in recs_xy_list_or_shape_data:  #pylint: disable=E1133
             ImgDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
 
-    def draw_recs_by_txt(txt_path, img, width, color, distinguish_first_side=False):
+    # TODO：绘制整个文件夹中img
+    def draw_recs_by_txt(txt_path_dir, img_dir, width, color, distinguish_first_side=False):
         """
         Parameters
         图片中绘制多个rec端子，基于txt
         ----------
-        txt_path：rec txt路径
+        txt_path：rec_txt路径或存放txt的dir
+        img_dir：PIL Image或存放img的dir
 
         Returns
         ----------
-        """
+        """   
         recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_path)
         ImgDraw.draw_recs(recs_xy_list, img, width, color, distinguish_first_side)
 

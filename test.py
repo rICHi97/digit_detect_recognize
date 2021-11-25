@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """
 Created on Thu Sep 30 22:24:20 2021
 
@@ -15,6 +15,7 @@ from pkgs.recdata import recdata_correcting, recdata_io, recdata_processing
 from pkgs.tool import image_processing, visualization
 from pkgs.east import east_data, east_net
 
+ImgDraw = visualization.ImgDraw
 EastPreprocess = east_data.EastPreprocess
 EastNet = east_net.EastNet
 # TODO：矫正后端子四点坐标不对
@@ -24,7 +25,7 @@ EastNet = east_net.EastNet
 # 1.jpg：双列 2.png：单列单线 10141，jpg：单列单线
 
 
-test_correct_all_imgs = False
+test_correct_all_imgs = True
 test_correct_one_img = False
 test_merge_json = False
 test_crop_img = False
@@ -94,29 +95,30 @@ if test_correct_one_img:
 
 # 矫正多张图片
 if test_correct_all_imgs:
-    imgs_rec_dict = recdata_io.RecdataIO.read_rec_txt_dir('test/image_txt', keyword='original')
+    imgs_rec_dict = recdata_io.RecdataIO.read_rec_txt_dir('./source/test_data/image_txt')
     i = 0
     imgs_xy_list = {}
     for key, recs_xy_list in imgs_rec_dict.items():
-        img_name = key.split('original')[0][:-1]
+        img_name = key[:-4]
         try:
-            img = Image.open('test/image/' + img_name + '.jpg')
+            img = Image.open('./source/test_data/image/' + img_name + '.jpg')
         except FileNotFoundError:
-            img = Image.open('test/image/' + img_name + '.png')
-        if len(recs_xy_list) < 3:
-            i += 1
-        else:
-            corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
-            _ = []
-            for rec_shape_data in corrected_recs_shape_data:
-                xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
-                visualization.ImgDraw.draw_rec(
-                    xy_list, img, width=2, color='black', distinguish_first_side=True
+            img = Image.open('./source/test_data/image/' + img_name + '.png')
+        ImgDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+        # if len(recs_xy_list) < 3:
+        #     i += 1
+        # else:
+        #     corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
+        #     _ = []
+        #     for rec_shape_data in corrected_recs_shape_data:
+        #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
+        #         visualization.ImgDraw.draw_rec(
+        #             xy_list, img, width=2, color='black', distinguish_first_side=True
                     
-                )
-                _.append(xy_list)
-            imgs_rec_dict[key] = _
-        img.save('test/' + img_name + '.jpg')
+        #         )
+        #         _.append(xy_list)
+        #     imgs_rec_dict[key] = _
+        img.save('./source/test_data/' + img_name + '.jpg')
 
 end = time.process_time()
 print(end - start)
