@@ -16,11 +16,7 @@ _api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
 _secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
 _digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
 _character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
-_host = (
-    'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&'
-    f'client_id={_api_key}&client_secret={_secret_key}'
-)
-
+_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
 # TODO：token会变化吗？
 _access_token = None
 
@@ -29,16 +25,16 @@ class RecdataRecognize(object):
 
     @staticmethod
     def _get_access_token():
-        global _access_token, _host
+        global _access_token, _host  #pylint: disable=W0603
         if _access_token is None:
             response = requests.get(_host)
             _access_token = response.json()['access_token']
 
         return _access_token
 
-
-    def digit_recognize():
-        pass
+    @staticmethod
+    def _request_post():
+        ...
 
     @staticmethod
     def character_recognize(img_path):
@@ -53,6 +49,15 @@ class RecdataRecognize(object):
                 print(response.json())
 
 
-    def recognize(img, recs_xy_list):
-        # TODO：裁切，拼接，识别
-        pass
+    def recognize(img, recs_xy_list, recs_classes_list):
+
+        recs_classes_set = set(recs_classes_list)
+        for classes in recs_classes_set:
+            recs_same_classes = []
+            for i in range(len(recs_classes_list)):
+                if recs_classes_list[i] == classes:
+                    recs_same_classes.append(recs_xy_list[i])
+            if classes == '编号':
+                # 矫正，裁切拼接图片，调用数字识别
+            elif classes == '铭牌':
+                # 单独裁切每个rec，调用文字识别

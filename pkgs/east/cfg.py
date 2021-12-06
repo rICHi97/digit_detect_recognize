@@ -17,17 +17,17 @@ preprocess_img_dir = 'c_preprocess_img'
 label_img_dir = 'c_label_img'
 
 save_weights_dir = './source/east_model/'
-east_weights_file_path = './source/east_model/weights_3T832.019-0.152.h5'
-# east_weights_file_path = './source/east_model/weights_3T832.020-0.113.h5'
+east_weights_filepath = './source/east_model/029-0.132.h5'
+# east_weights_filepath = './source/east_model/weights_3T832.020-0.113.h5'
 img_dir = './source/test_data/image/'
 predict_img_dir = None
 output_txt_dir = './source/test_data/image_txt'
 
-val_ratio = 0.1
+val_ratio = 0.2
 val_filename = f'val_{train_task_id}.txt'
 train_filename = f'train_{train_task_id}.txt'
-total_img = None
-batch_size = 4  # batch_size应该随img_size而调整
+total_img = 14
+batch_size = 2  # batch_size应该随img_size而调整
 steps_per_epoch = total_img * (1 - val_ratio) // batch_size
 val_steps = total_img * val_ratio // batch_size
 summary = True
@@ -50,7 +50,7 @@ max_train_img_size = int(train_task_id[-3:])
 max_predict_img_size = int(train_task_id[-3:])
 num_channels = 3
 num_img = 1
-locked_layers = False
+# locked_layers = True  # 测试，这个lock layers好像无用
 feature_layers_range = range(5, 1, -1)
 feature_layers_num = len(feature_layers_range)
 pixel_size = 2 ** feature_layers_range[-1]  # pixel_size = 4
@@ -59,13 +59,14 @@ side_vertex_pixel_threshold = 0.6  # 原始为0.8，越大越严格，判断是�
 trunc_threshold = 0.1 # 原始为0.2，越小越严格，判断头尾像素
 
 # 控制三个loss的系数
+lambda_class_score_loss = 4.0
 lambda_inside_score_loss = 4.0
 lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0
 
 early_stopping_patience = 8
 early_stopping_verbose = True
-check_point_filepath = './source/east_model/{epoch:03d}_{val_loss:.3f}.h5'
+check_point_filepath = './source/east_model/{epoch:03d}-{val_loss:.3f}.h5'
 check_point_period = 1
 check_point_verbose = True
 reduce_lr_monitor = 'val_loss'

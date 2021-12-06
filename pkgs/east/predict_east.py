@@ -292,7 +292,7 @@ if __name__ == '__main__':
 
     east = East()
     east_detect = east.east_network()
-    east_detect.load_weights(cfg.saved_model_weights_file_path)
+    east_detect.load_weights(cfg.saved_model_weights_filepath)
 
     east_detect.summary()
 

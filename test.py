@@ -15,7 +15,9 @@ from pkgs.recdata import recdata_correcting, recdata_io, recdata_processing
 from pkgs.tool import image_processing, visualization
 from pkgs.east import east_data, east_net
 
+RecdataIO = recdata_io.RecdataIO
 ImgDraw = visualization.ImgDraw
+EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 EastNet = east_net.EastNet
 # TODO：矫正后端子四点坐标不对
@@ -25,12 +27,16 @@ EastNet = east_net.EastNet
 # 1.jpg：双列 2.png：单列单线 10141，jpg：单列单线
 
 
-test_correct_all_imgs = True
+test_correct_all_imgs = False
 test_correct_one_img = False
 test_merge_json = False
 test_crop_img = False
 test_label = False
-test_east_data = True
+test_east_data = False
+test_east_net = False
+test_east_train = False
+test_east_predict = False
+test_show_gt = True
 
 start = time.process_time()
 
@@ -44,12 +50,27 @@ json2_dir = path.normpath(
 # output_dir = path.normpath(
 #     r'D:\各种文件\图像识别\端子排数据\标注整个边框\json_合并'
 # ).replace('\\', '/')
+
+if test_east_net:
+
+    east = EastNet()
+    east.east_model.summary()    
+
 if test_east_data:
         
-      # EastPreprocess.preprocess()
-      east = EastNet()
-      east.predict()
-                                             
+    EastPreprocess.preprocess()
+    EastPreprocess.label()
+
+if test_east_train:
+
+    callbacks = [
+        EastData.callbacks('early_stopping'),
+        EastData.callbacks('check_point'),
+        EastData.callbacks('reduce_lr'),
+    ]
+    east = EastNet()
+    east.train(callbacks=callbacks)
+
 if test_label:
 
     label_files = os.listdir(label_dir)
@@ -119,6 +140,41 @@ if test_correct_all_imgs:
         #         _.append(xy_list)
         #     imgs_rec_dict[key] = _
         img.save('./source/test_data/' + img_name + '.jpg')
+
+if test_east_predict:
+
+    east = EastNet()
+    east.predict()
+    imgs_rec_dict = RecdataIO.read_rec_txt_dir('./source/test_data/image_txt')
+    i = 0
+    imgs_xy_list = {}
+    for key, recs_xy_list in imgs_rec_dict.items():
+        img_name = key[:-4]
+        try:
+            img = Image.open('./source/test_data/image/' + img_name + '.jpg')
+        except FileNotFoundError:
+            img = Image.open('./source/test_data/image/' + img_name + '.png')
+        ImgDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+        # if len(recs_xy_list) < 3:
+        #     i += 1
+        # else:
+        #     corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
+        #     _ = []
+        #     for rec_shape_data in corrected_recs_shape_data:
+        #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
+        #         visualization.ImgDraw.draw_rec(
+        #             xy_list, img, width=2, color='black', distinguish_first_side=True
+                    
+        #         )
+        #         _.append(xy_list)
+        #     imgs_rec_dict[key] = _
+        img.save('./source/test_data/' + img_name + '.jpg')
+
+if test_show_gt:
+    
+    gt_filepath = './source/train_data/b_train_label/terminal_5_number_1_gt.npy'
+    img_filepath = './source/train_data/a_img/terminal_5_number_1.jpg'
+    ImgDraw.draw_gt_file(gt_filepath, img_filepath)
 
 end = time.process_time()
 print(end - start)

@@ -4,6 +4,7 @@ Created on 2021-10-26 21:40:38
 
 @author: Li Zhi
 """
+import base64
 import math
 import os
 import os.path as path
@@ -19,6 +20,7 @@ from ..recdata import recdata_processing
 EPSILON = 1e-4
 Polygon = geometry.Polygon
 
+# TODO：img参数类型应该统一
 class ImageProcess(object):
     """
     用于处理图片
@@ -109,7 +111,7 @@ class ImageProcess(object):
         Returns
         ----------
         """
-        def crop_img(img_file_path, label_file_path):
+        def crop_img(img_filepath, label_filepath):
             
             # TODO：裁切区域的宽高需要大于一定阈值
             def from_label_get_crop_region(
@@ -170,7 +172,7 @@ class ImageProcess(object):
 
                 return label_line
 
-            with open(label_file_path, encoding='utf-8') as f:
+            with open(label_filepath, encoding='utf-8') as f:
                 label_lines = f.readlines()
 
             get_region = lambda label_line: [float(point) for point in label_line.split(',')[:8]]
@@ -187,7 +189,7 @@ class ImageProcess(object):
                 return
 
             i = 0
-            img = Image.open(img_file_path)
+            img = Image.open(img_filepath)
             width, height = img.size[0], img.size[1]
 
             while i < count:
@@ -248,7 +250,7 @@ class ImageProcess(object):
                 samename_img_files.append(img_file)
 
         for img_file in samename_img_files:
-            img_file_path = path.join(img_dir, img_file)
+            img_filepath = path.join(img_dir, img_file)
             label_file = get_filename(img_file) + '.txt'
-            label_file_path = path.join(label_dir, label_file)
-            crop_img(img_file_path, label_file_path)
+            label_filepath = path.join(label_dir, label_file)
+            crop_img(img_filepath, label_filepath)

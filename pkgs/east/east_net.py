@@ -51,7 +51,7 @@ def _init_environ():
     config.gpu_options.allow_growth = True  #pylint: disable=E1101
     session = Session(config=config)
 
-
+# TODO：增加一个输出通道，判断是标签或铭牌
 class EastNet(object):
     """
     EastNet的predict和train依赖一个网络
@@ -60,7 +60,6 @@ class EastNet(object):
     """
     def __init__(
         self,
-        locked_layers=cfg.locked_layers,
         feature_layers_range=cfg.feature_layers_range,
         feature_layers_num=cfg.feature_layers_num,
     ):
@@ -74,19 +73,22 @@ class EastNet(object):
             input_tensor=self.input_img, weights='imagenet', include_top=False
         )
 
-        if locked_layers:
-            # locked first two conv layers
-            locked_layers = [vgg16.get_layer('block1_conv1'), vgg16.get_layer('block1_conv2')]
-            for layer in locked_layers:
-                layer.trainable = False
-
+        # block5_pool, block4_pool, block3_pool, block2_pool
         self._f = [vgg16.get_layer(f'block{i}_pool').output for i in feature_layers_range]
+        # [None, blcok5_pool,...,block2_pool]
         self._f.insert(0, None)
+        # [5, 4, 3, 2]，diff = feature_layers_range[0] - feature_layers_num = 1
+        # 将feature_layers_range按从小到大排列：2, 3, 4, 5，i是索引(base1)
+        # i + diff是第i小的值
         self.diff = feature_layers_range[0] - feature_layers_num
         self.east_model = self.network()
 
+
     def _g(self, i):
         # i+diff in cfg.feature_layers_range
+        # i in (1, 2, 3), gi = unpool(hi)
+        # i = 4, gi = conv3(hi)
+        # else: error
         if not i + self.diff in self.feature_layers_range:
             print(f'i={i}+diff={self.diff} not in {str(self.feature_layers_range)}')
         if i == self.feature_layers_num:
@@ -97,6 +99,9 @@ class EastNet(object):
 
     def _h(self, i):
         # i+diff in cfg.feature_layers_range
+        # i in (2, 3, 4), hi = conv3(conv1(gi-1, fi))
+        # i = 1, hi = fi
+        # f = [None, blcok5_pool,...,block2_pool]
         if not i + self.diff in self.feature_layers_range:
             print(f'i={i}+diff={self.diff} not in {str(self.feature_layers_range)}')
         if i == 1:
@@ -120,12 +125,19 @@ class EastNet(object):
         ----------
         keras.Model
         """
+        # features_layers_range = [5, 4, 3, 2]
+        # before_output = self._g(4)
         before_output = self._g(self.feature_layers_num)
+        # Layers()
+        # 增加class_score用于区分是端子铭牌还是端子编号
         inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
+        classes_score = Conv2D(1, 1, padding='same', neme='class_score')(before_output)        
         side_v_code = Conv2D(2, 1, padding='same', name='side_vertex_code')(before_output)
         side_v_coord = Conv2D(4, 1, padding='same', name='side_vertex_coord')(before_output)
         east_detect = (
-            Concatenate(axis=-1, name='east_detect')([inside_score, side_v_code, side_v_coord])
+            Concatenate(axis=-1, name='east_detect')(
+                [inside_score, classes_score, side_v_code, side_v_coord]
+            )
         )
 
         return Model(inputs=self.input_img, outputs=east_detect)  
@@ -151,6 +163,8 @@ class EastNet(object):
         Returns
         ----------
         """
+        print(steps_per_epoch)
+        print(val_steps)
         if summary:
             self.east_model.summary()
         # TODO：研究Adam优化器
@@ -160,13 +174,13 @@ class EastNet(object):
         )
         # TODO：新版的keras貌似已经在fit中集成了fit_generator功能，有待研究
         self.east_model.fit_generator(
-            train_generator(),
-            steps_per_epoch,
-            epoch_num,
-            verbose,
-            callbacks,
-            val_generator(is_val=True),
-            val_steps,
+            generator=train_generator(),
+            steps_per_epoch=steps_per_epoch,
+            epochs=epoch_num,
+            verbose=verbose,
+            callbacks=callbacks,
+            validation_data=val_generator(is_val=True),
+            validation_steps=val_steps,
         )
         self.east_model.save_weights(save_weights_dir)
 
@@ -175,7 +189,7 @@ class EastNet(object):
     # TODO：terminal_23识别有问题
     def predict(
         self,
-        east_weights_file_path=cfg.east_weights_file_path,
+        east_weights_filepath=cfg.east_weights_filepath,
         img_dir=cfg.img_dir,
         output_txt_dir=cfg.output_txt_dir,
         max_predict_img_size=cfg.max_predict_img_size,
@@ -193,7 +207,7 @@ class EastNet(object):
         ----------
 
         """
-        self.east_model.load_weights(east_weights_file_path)
+        self.east_model.load_weights(east_weights_filepath)
 
         img_files = os.listdir(img_dir)
         img_paths = [path.join(img_dir, img_file) for img_file in img_files]
@@ -218,10 +232,13 @@ class EastNet(object):
 
                 recs_xy_list = []
                 y = y_pred[i]
-                y[:, :, :3] = EastData.sigmoid(y[:, :, :3])
+                y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
                 condition = np.greater_equal(y[:, :, 0], pixel_threshold)
                 activation_pixels = np.where(condition)
-                recs_score, recs_after_nms = EastData.nms(y, activation_pixels)
+                # 12/4：nms中已经修改，以适应predict tensor shape
+                recs_score, recs_after_nms, recs_classes_list = EastData.nms(
+                    y, activation_pixels, return_classes=True
+                )
 
                 for score, rec in zip(recs_score, recs_after_nms):
                     if np.amin(score) > 0:
@@ -230,12 +247,9 @@ class EastNet(object):
                         rec[:, 1] *= scale_ratio_h
                         rec = np.reshape(rec, (8,)).tolist()
                         recs_xy_list.append(rec)
-                txt_name = path.basename(img_path)[:-4] + '.txt'
-                RecdataIO.write_rec_txt(recs_xy_list, output_txt_dir, txt_name)
+                        
+        return recs_xy_list, recs_classes_list
 
-                # TODO：展示预测结果
-                if show_predict_img:
-                    pass
 
 
 

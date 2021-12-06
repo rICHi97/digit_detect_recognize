@@ -8,10 +8,12 @@ Created on 2021-09-29 20:08:09
 一张图片的多个rec的端点：recs_xy_list
 多张图片的recs字典：imgs_rec_dict
 """
+# TODO：将该模块移至tool中，实现更多数据的io
 import fnmatch
 import json
 import os
 import os.path as path
+
 
 class RecdataIO(object):
     """
@@ -71,6 +73,21 @@ class RecdataIO(object):
         os.chdir(cwd)
 
         return imgs_rec_dict
+
+    @staticmethod
+    def read_gt_file(gt_filepath):
+        """
+        读取一个_gt.npy文件，返回recs_list和class信息
+        Parameters
+        ----------
+        gt_filepath：gt文件路径
+
+        Returns
+        ----------
+        recs_xy_list：多个rec的四点坐标
+        recs_classes：多个rec的类别信息
+        """
+        
 
     @staticmethod
     def write_rec_txt(recs_xy_list, txt_dir, txt_name):
@@ -157,11 +174,11 @@ class RecdataIO(object):
                 True if keyword is None or keyword in node['labels']['labelName'] else False
         )
 
-        def merge_two_json_file(json1_file_path, json2_file_path):
+        def merge_two_json_file(json1_filepath, json2_filepath):
 
-            with open(json1_file_path, encoding='utf-8') as json1_file:
+            with open(json1_filepath, encoding='utf-8') as json1_file:
                 json1 = json.loads(json1_file.read())
-            with open(json2_file_path, encoding='utf-8') as json2_file:
+            with open(json2_filepath, encoding='utf-8') as json2_file:
                 json2 = json.loads(json2_file.read())
             
             merge_json1 = [node for node in json1 if is_keyword_in_label(node, json1_keyword)]
@@ -179,9 +196,9 @@ class RecdataIO(object):
         json1_files, json2_files = os.listdir(json1_dir), os.listdir(json2_dir)
         json_samename = [json_file for json_file in json1_files if json_file in json2_files]
         for file in json_samename:
-            json1_file_path = path.join(json1_dir, file)
-            json2_file_path = path.join(json2_dir, file)
-            merge_json = merge_two_json_file(json1_file_path, json2_file_path)
+            json1_filepath = path.join(json1_dir, file)
+            json2_filepath = path.join(json2_dir, file)
+            merge_json = merge_two_json_file(json1_filepath, json2_filepath)
             merge_json_path = path.join(output_dir, file)
             with open(merge_json_path, 'w', encoding='utf-8') as f:
                 json.dump(merge_json, f, ensure_ascii=False, indent=indent)

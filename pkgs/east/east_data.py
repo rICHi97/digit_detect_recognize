@@ -22,12 +22,13 @@ from tensorflow.compat import v1
 from . import cfg
 from ..recdata import recdata_processing
 
-preprocess_input = applications.vgg16.preprocess_inputtqdm = tqdm.tqdm
+preprocess_input = applications.vgg16.preprocess_input
 EarlyStopping = callbacks.EarlyStopping
 LearningRateScheduler = callbacks.LearningRateScheduler
 ModelCheckpoint = callbacks.ModelCheckpoint
 ReduceLROnPlateau = callbacks.ReduceLROnPlateau
 TensorBoard = callbacks.TensorBoard
+tqdm = tqdm.tqdm
 cast = v1.cast
 equal = v1.equal
 reduce_mean = v1.reduce_mean
@@ -123,6 +124,8 @@ class EastPreprocess(object):
     """
     本类用于预处理数据，包括预处理及生成标签
     """
+    # 训练时是固定size img
+    # predict时resize_img
     @staticmethod
     def resize_img(img, max_img_size=cfg.max_train_img_size):
         """
@@ -210,6 +213,8 @@ class EastPreprocess(object):
             print(f'原始图片共{len(origin_img_list)}张。')
 
         train_val_set = []
+        # 训练时固定size img
+        # predict时resize
         d_width, d_height = max_train_img_size, max_train_img_size
         for origin_img_name, _ in zip(origin_img_list, tqdm(range(len(origin_img_list)))):  #pylint: disable=E1102
 
@@ -228,7 +233,8 @@ class EastPreprocess(object):
             with open(origin_txt_path, 'r', encoding='utf-8') as f:
                 annotation_list = f.readlines()  # 单张图片标注
 
-            recs_xy_list = np.zeros((len(annotation_list), 4, 2))
+            # 8位表示4点坐标，1位表示端子编号或铭牌
+            recs_xy_list = np.zeros((len(annotation_list), 9))
             for anno, i in zip(annotation_list, range(len(annotation_list))):
                 anno_columns = anno.strip().split(',') # 单个rec
                 anno_array = np.array(anno_columns)
@@ -238,25 +244,31 @@ class EastPreprocess(object):
                 xy_list[:, 0] = xy_list[:, 0] * scale_ratio_w
                 xy_list[:, 1] = xy_list[:, 1] * scale_ratio_h
                 xy_list = RecdataProcess.reorder_vertexes(xy_list)
-                recs_xy_list[i] = xy_list  # 训练数据为原始xy_list经过按比例收缩和reorder
+                four_points = xy_list.copy()
+                xy_list = np.reshape(xy_list, -1).tolist()
+                if anno_array[8] == 'number':
+                    xy_list.insert(1, 0)
+                elif anno_array[8] == 'plate':
+                    xy_list.insert(1, 1)
+                recs_xy_list[i] = np.array(xy_list)  # 训练数据为原始xy_list经过按比例收缩和reorder
 
                 # TODO：画框&保存resize原始图片，需要画框时才收缩
 
                 # TODO：返回的第一个对象是收缩一组对边后的xy_list
                 if show_preprocess_img:
-                    W_H_ratio = _get_W_H_ratio(xy_list)
-                    _, shrink_xy_list, _ = RecdataProcess.shrink(xy_list, shrink_ratio)
+                    W_H_ratio = _get_W_H_ratio(four_points)
+                    _, shrink_xy_list, _ = RecdataProcess.shrink(four_points, shrink_ratio)
                     shrink_1, _, long_edge = RecdataProcess.shrink(
-                        xy_list, shrink_side_ratio * W_H_ratio
+                        four_points, shrink_side_ratio * W_H_ratio
                     )
                     # 原始框
                     draw.line(
                         [
-                            tuple(xy_list[0]), 
-                            tuple(xy_list[1]),
-                            tuple(xy_list[2]), 
-                            tuple(xy_list[3]),
-                            tuple(xy_list[0]),
+                            tuple(four_points[0]), 
+                            tuple(four_points[1]),
+                            tuple(four_points[2]), 
+                            tuple(four_points[3]),
+                            tuple(four_points[0]),
                         ],
                         width=1,
                         fill='green',
@@ -282,11 +294,11 @@ class EastPreprocess(object):
                     for q_th in range(2):
                         draw.line(
                             [
-                                tuple(xy_list[vs[long_edge][q_th][0]]),
+                                tuple(four_points[vs[long_edge][q_th][0]]),
                                 tuple(shrink_1[vs[long_edge][q_th][1]]),
                                 tuple(shrink_1[vs[long_edge][q_th][2]]),
-                                tuple(xy_list[vs[long_edge][q_th][3]]),
-                                tuple(xy_list[vs[long_edge][q_th][4]]),
+                                tuple(four_points[vs[long_edge][q_th][3]]),
+                                tuple(four_points[vs[long_edge][q_th][4]]),
                             ],
                             width=1,
                             fill='yellow',
@@ -352,7 +364,7 @@ class EastPreprocess(object):
                 int(line_cols[2].strip()),
             )
 
-            groung_truth = np.zeros((height // pixel_size, width // pixel_size, 7))
+            groung_truth = np.zeros((height // pixel_size, width // pixel_size, 8))
             recs_xy_list = np.load(path.join(train_label_dir, img_name[:-4] + '.npy'))   
 
             if show_label_img:
@@ -361,6 +373,8 @@ class EastPreprocess(object):
 
             for xy_list in recs_xy_list:
                 
+                class_ = xy_list[1]
+                xy_list = np.delete(np.array(xy_list), 1).reshape((4, 2))
                 W_H_ratio = _get_W_H_ratio(xy_list)
                 _, shrink_xy_list, _ = RecdataProcess.shrink(xy_list, shrink_ratio)
                 shrink_1, _, long_edge = RecdataProcess.shrink(
@@ -383,6 +397,7 @@ class EastPreprocess(object):
                         py = (i + 0.5) * pixel_size
                         if _is_point_inside_shrink(px, py, shrink_xy_list, p_min, p_max):
                             groung_truth[i, j, 0] = 1
+                            groung_truth[i, j, 1] = class_
                             line_width, line_color = 1, 'red'
                             # 如果在首，ith = 0；在尾，ith = 1
                             ith = _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge)
@@ -391,12 +406,12 @@ class EastPreprocess(object):
                             # vs = [[[1, 2], [3, 0]]]
                             # in range(2) = 是首尾像素
                             if ith in range(2):
-                                groung_truth[i, j, 1] = 1
-                                groung_truth[i, j, 2:3] = ith
+                                groung_truth[i, j, 2] = 1
+                                groung_truth[i, j, 3] = ith
                                 # 如果属于首像素，就是和第0 1点坐标之差
                                 # 如果属于尾像素，就是和第2 3点坐标之差
-                                groung_truth[i, j, 3:5] = xy_list[vs[long_edge][ith][0]] - [px, py]
-                                groung_truth[i, j, 5:] = xy_list[vs[long_edge][ith][1]] - [px, py]
+                                groung_truth[i, j, 4:6] = xy_list[vs[long_edge][ith][0]] - [px, py]
+                                groung_truth[i, j, 6:8] = xy_list[vs[long_edge][ith][1]] - [px, py]
                                 line_width = 2
                                 line_color = 'yellow' if ith == 0 else  'green'
 
@@ -453,8 +468,10 @@ def _rec_region_merge(region_list, m, S):
     rows = [m]
     tmp = []
     for n in S:
-        if not _region_neighbor(region_list[m]).isdisjoint(region_list[n]) or \
-                not _region_neighbor(region_list[n]).isdisjoint(region_list[m]):
+        if (
+            not _region_neighbor(region_list[m]).isdisjoint(region_list[n]) or
+            not _region_neighbor(region_list[n]).isdisjoint(region_list[m])
+        ):
             # 第m与n相交
             tmp.append(n)
     for d in tmp:
@@ -480,12 +497,15 @@ class EastData(object):
         y = 1 / (1 + np.exp(-x))
         return y
 
+    # TODO：预测classes功能可能需要拆分
     @staticmethod
     def nms(
         predict,
         activation_pixels,
         side_vertex_pixel_threshold=cfg.side_vertex_pixel_threshold,
         trunc_threshold=cfg.trunc_threshold,
+        pixel_size=cfg.pixel_size
+        return_classes=False
     ):
         """
         对预测结果非最大抑制。
@@ -513,30 +533,45 @@ class EastData(object):
                 region_list.append({(i, j)})
 
         D = _region_group(region_list)
-        rec_list = np.zeros((len(D), 4, 2))
+        recs_xy_list = np.zeros((len(D), 4, 2))
         score_list = np.zeros((len(D), 4))
+        recs_classes_list = np.zeros(len(D))
+        # 对于每个rec
         for group, g_th in zip(D, range(len(D))):
             total_score = np.zeros((4, 2))
+            classes_score, cnt = 0, 0
             for row in group:
                 for ij in region_list[row]:
-                    score = predict[ij[0], ij[1], 1]
+                    classes_score += predict[ij[0], ij[1], 1]
+                    cnt += 1
+                    # 边界得分
+                    score = predict[ij[0], ij[1], 2]
                     # 如果是边界像素
                     if score >= side_vertex_pixel_threshold:
-                        # ith_score表示头或尾
-                        ith_score = predict[ij[0], ij[1], 2:3]
+                        # ith_score表示头尾得分
+                        ith_score = predict[ij[0], ij[1], 3]
                         if not trunc_threshold <= ith_score < 1 - trunc_threshold:
-                            # TODO：四舍五入ith=0/1表示头/尾
                             ith = int(np.around(ith_score))
                             # score为是否为边界像素得分
-                            total_score[ith * 2 : (ith + 1) * 2] += score
-                            px = (ij[1] + 0.5) * cfg.pixel_size
-                            py = (ij[0] + 0.5) * cfg.pixel_size
-                            p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 3:7], (2, 2))
-                            rec_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
+                            total_score[ith * 2:(ith + 1) * 2] += score
+                            # TODO：recs_xy_list * cfg.pixel_size替代，原始是px,py * pixel_size
+                            px, py = ij[1] + 0.5, ij[0] + 0.5
+                            p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 4:8], (2, 2))
+                            # 第g_th个rec的首或尾加上该像素得分*该像素判断首尾坐标
+                            recs_xy_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
+            row = group[-1]
+            ij = list(region_list[row])[-1]
+            classes_score /= cnt
+            # TODO：设为函数参数，是否考虑加一类不确定
+            recs_classes_list[g_th] = '编号' if classes_score < 0.5 else '铭牌'
             score_list[g_th] = total_score[:, 0]
-            rec_list[g_th] /= (total_score + cfg.epsilon)
+            # recs_xy_list = (第i个像素score * 第i个像素p_v) / total_score
+            recs_xy_list[g_th] = recs_xy_list[g_th] * pixel_size / (total_score + cfg.epsilon)
+            recs_classes_list[g_th] = '编号' if classes > 0.9 
 
-        return score_list, rec_list
+        if return_classes:
+            return score_list, recs_xy_list, recs_classes_list
+        return score_list, recs_xy_list
         
     @staticmethod
     def generator(
@@ -562,7 +597,9 @@ class EastData(object):
         x = np.zeros((batch_size, img_h, img_w, num_channels), dtype=np.float32)
         pixel_num_h = img_h // pixel_size   # fixme 以4*4个像素点为一格 预测值score
         pixel_num_w = img_w // pixel_size
-        y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
+        # 增加一维class score
+        y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 8), dtype=np.float32)        
+        # y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
         if is_val:
             with open(os.path.join(data_dir, val_filename), 'r') as f_val:
                 f_list = f_val.readlines()
@@ -589,6 +626,7 @@ class EastData(object):
         y_true,
         y_pred,
         epsilon=cfg.epsilon,
+        lambda_class_score_loss=cfg.lambda_class_score_loss,
         lambda_inside_score_loss=cfg.lambda_inside_score_loss,
         lambda_side_vertex_code_loss=cfg.lambda_side_vertex_code_loss,
         lambda_side_vertex_coord_loss=cfg.lambda_side_vertex_coord_loss,
@@ -626,31 +664,51 @@ class EastData(object):
             )
 
             return pixel_wise_smooth_l1norm
+        # TODO：这个内部非边界像素有什么作用呢
+        # inside 0：是否在内部
+        # class 1：是编号还是铭牌
+        # vertex_code 2：是否在边界
+        # vertex_code 3：在首部还是尾部
+        # vertex_coord 4-7：首部或尾部两端点坐标差
 
         # loss for inside_score
-        logits = y_pred[:, :, :, :1]
-        labels = y_true[:, :, :, :1]
-        # balance positive and negative samples in an image
-        beta = 1 - reduce_mean(labels)
-        # first apply sigmoid activation
-        predicts = sigmoid(logits)
+        inside_logits = y_pred[:, :, :, 0]
+        inside_labels = y_true[:, :, :, 0]
+        inside_predicts = sigmoid(inside_logits)
+        inside_beta = 1 - reduce_mean(inside_labels)
         # log + epsilon for stable cal
         inside_score_loss = reduce_mean(
-            -1 * (beta * labels * v1.math.log(predicts + epsilon) +
-            (1 - beta) * (1 - labels) * v1.math.log(1 - predicts + epsilon))
+            -1 * (inside_beta * inside_labels * v1.math.log(inside_predicts + epsilon) +
+            (1 - inside_beta) * (1 - inside_labels) * v1.math.log(1 - inside_predicts + epsilon))
         )
         inside_score_loss *= lambda_inside_score_loss
 
+        # loss for class_score
+        class_logits = y_pred[:, :, :, 1]
+        class_labels = y_true[:, :, :, 1]
+        class_predicts = sigmoid(class_logits)
+        class_beta = 1 - reduce_mean(class_labels)
+        class_score_loss = reduce_mean(
+            -1 * (class_beta * class_labels * v1.math.log(class_predicts + epsilon) +
+            (1 - class_beta) * (1 - class_labels) * v1.math.log(1 - class_predicts + epsilon))
+        )
+        class_score_loss *= lambda_class_score_loss
+
         # loss for side_vertex_code
         # fixme class-balanced cross-entropy 处理正负样本不均衡问题
-        vertex_logits = y_pred[:, :, :, 1:3]
-        vertex_labels = y_true[:, :, :, 1:3]
-        vertex_beta = 1 - (reduce_mean(y_true[:, :, :, 1:2]) / (reduce_mean(labels) + epsilon))
+        vertex_logits = y_pred[:, :, :, 2:4]
+        vertex_labels = y_true[:, :, :, 2:4]
+        # beta = 1 - 是否为边界/是否为内部
+        vertex_beta = (
+            1 - (reduce_mean(y_true[:, :, :, 2:3]) / (reduce_mean(inside_labels) + epsilon))
+        )
         vertex_predicts = sigmoid(vertex_logits)
         pos = -1 * vertex_beta * vertex_labels * v1.math.log(vertex_predicts + epsilon)
         neg = -1 * (
             (1 - vertex_beta) * (1 - vertex_labels) * v1.math.log(1 - vertex_predicts + epsilon)
         )
+        # cast：向下取整
+        # positive_weights返回所有内部像素为1的tensor
         positive_weights = cast(v1.equal(y_true[:, :, :, 0], 1), v1.dtypes.float32)
         side_vertex_code_loss = (
             reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) /
@@ -661,9 +719,10 @@ class EastData(object):
         # loss for side_vertex_coord delta
         # fixme 所有的边界像素预测值的加权平均来预测头或尾的短边两端的两个顶点
         # smoothed L1 loss
-        g_hat = y_pred[:, :, :, 3:]
-        g_true = y_true[:, :, :, 3:]
-        vertex_weights = cast(v1.equal(y_true[:, :, :, 1], 1), v1.dtypes.float32)
+        g_hat = y_pred[:, :, :, 4:]
+        g_true = y_true[:, :, :, 4:]
+        # veryex_weights返回所有边界像素为1的tensor
+        vertex_weights = cast(v1.equal(y_true[:, :, :, 2], 1), v1.dtypes.float32)
         pixel_wise_smooth_l1norm = smooth_l1_loss(g_hat, g_true, vertex_weights)
         side_vertex_coord_loss = (
             reduce_sum(pixel_wise_smooth_l1norm) /
@@ -671,7 +730,7 @@ class EastData(object):
         )
         side_vertex_coord_loss *= lambda_side_vertex_coord_loss
 
-        return inside_score_loss + side_vertex_code_loss + side_vertex_coord_loss
+        return inside_score_loss + class_score_loss + side_vertex_code_loss + side_vertex_coord_loss
 
     @staticmethod
     def callbacks(type_=None,
@@ -679,7 +738,7 @@ class EastData(object):
         early_stopping_verbose=cfg.early_stopping_verbose,
         check_point_filepath=cfg.check_point_filepath,
         check_point_period=cfg.check_point_period,
-        check_point_verbose=check_point_verbose,
+        check_point_verbose=cfg.check_point_verbose,
         reduce_lr_monitor=cfg.reduce_lr_monitor,
         reduce_lr_factor=cfg.reduce_lr_factor,
         reduce_lr_patience=cfg.reduce_lr_patience,
@@ -696,7 +755,7 @@ class EastData(object):
         if type_ not in ['early_stopping', 'check_point', 'reduce_lr']:
             return
         if type_ == 'early_stopping':
-            callback = EarlyStopping(early_stopping_patience, early_stopping_verbose)
+            callback = EarlyStopping(patience=early_stopping_patience, verbose=early_stopping_verbose)
         elif type_ == 'check_point':
             # TODO：默认monitor
             callback = ModelCheckpoint(
