@@ -16,10 +16,19 @@ vector为rec的四边向量，向量指向为从左至右，从下至上
     -:  ¦   ¦
     -:  ---->
 """
+import base64
 import math
+import requests
 
 import numpy as np
 
+_api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
+_secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
+_digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
+_character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
+_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
+# TODO：token会变化吗？
+_access_token = None
 EPSILON = 1e-4
 
 def _get_vector(length, rotate_angle):
@@ -69,7 +78,7 @@ class Recdata(object):
         Parameters
         ----------
         recs_data_list：多个rec的data列表
-        is_rotate_angle：是否为旋转角
+        is_rotate_angle：待求取的rec_data是否为旋转角，只针对旋转角分别按正负求平均
 
         Returns
         ----------
@@ -102,11 +111,12 @@ class Recdata(object):
         ----------
         edge_vectors：四边向量，按W1 W2 H1 H2顺序
         """
-        four_vertexes = RecdataProcess.from_18_to_42(xy_list)
-        W1 = [four_vertexes[0][0] - four_vertexes[1][0], four_vertexes[0][1] - four_vertexes[1][1]]
-        W2 = [four_vertexes[3][0] - four_vertexes[2][0], four_vertexes[3][1] - four_vertexes[2][1]]
-        H1 = [four_vertexes[1][0] - four_vertexes[2][0], four_vertexes[1][1] - four_vertexes[2][1]]
-        H2 = [four_vertexes[0][0] - four_vertexes[3][0], four_vertexes[0][1] - four_vertexes[3][1]]
+        xy_list = RecdataProcess.reorder_rec(xy_list)
+        xy_list = RecdataProcess.from_18_to_42(xy_list)
+        W1 = [xy_list[0][0] - xy_list[1][0], xy_list[0][1] - xy_list[1][1]]
+        W2 = [xy_list[3][0] - xy_list[2][0], xy_list[3][1] - xy_list[2][1]]
+        H1 = [xy_list[1][0] - xy_list[2][0], xy_list[1][1] - xy_list[2][1]]
+        H2 = [xy_list[0][0] - xy_list[3][0], xy_list[0][1] - xy_list[3][1]]
         edge_vectors = [W1, W2, H1, H2]
 
         return edge_vectors
@@ -178,7 +188,6 @@ class Recdata(object):
         """
         xy_list = RecdataProcess.reorder_rec(xy_list)
         rec_shape_data = {}
-
 
         if center:
             center_x, center_y = Recdata.get_center(xy_list)
@@ -306,9 +315,9 @@ class RecdataProcess(object):
             xy_list = xy_list.tolist()
 
         return xy_list
-
+    
     @staticmethod
-    def reorder_vertexes(xy_list):
+    def _reorder_vertexes(xy_list):
         """
         重排端点顺序，先找最小x作为起始端点，
         在剩下三点找中间y作为第三点，剩下两点按逆时针排序
@@ -375,7 +384,8 @@ class RecdataProcess(object):
             reorder_xy_list[0, 0], reorder_xy_list[0, 1] = tmp_x, tmp_y
         
         return reorder_xy_list
-
+    
+    # 应该使用reorder_rec来重排rec端点
     @staticmethod
     def reorder_rec(xy_list):
         """
@@ -390,7 +400,7 @@ class RecdataProcess(object):
         ----------
         reorder_xy_list:重排后4x2格式rec端点坐标        
         """
-        xy_list = RecdataProcess.reorder_vertexes(xy_list)
+        xy_list = RecdataProcess._reorder_vertexes(xy_list)
         # 调整起点
         tmp_x, tmp_y = xy_list[3, 0], xy_list[3, 1]
         for i in range(3, 0, -1):
@@ -398,7 +408,6 @@ class RecdataProcess(object):
         xy_list[0, 0], xy_list[0, 1] = tmp_x, tmp_y
         reorder_rec_xy_list = np.reshape(xy_list, (1, 8))[0]
 
-        # TODO: 原函数同时返回'test'
         return reorder_rec_xy_list
 
     @staticmethod
@@ -510,3 +519,54 @@ class RecdataProcess(object):
         RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, ratio)
 
         return temp_new_xy_list, new_xy_list, long_edge      
+
+
+class RecdataRecognize(object):
+
+    @staticmethod
+    def _get_access_token():
+        global _access_token, _host  #pylint: disable=W0603
+        if _access_token is None:
+            response = requests.get(_host)
+            _access_token = response.json()['access_token']
+
+        return _access_token
+
+    @staticmethod
+    def _request_post():
+        ...
+
+    @staticmethod
+    def character_recognize(img_path):
+        with open(img_path, 'rb') as f:
+            img = base64.b64encode(f.read())
+            params = {'image': img}
+            access_token = RecdataRecognize._get_access_token()
+            request_url = f'{_character_request_url}?access_token={access_token}'
+            headers = {'content-type': 'application/x-www-form-urlencoded'}
+            response = requests.post(request_url, data=params, headers=headers)
+            if response:
+                print(response.json())
+
+    @staticmethod
+    def recognize(img, recs_xy_list, recs_classes_list):
+        from . import recdata_correcting  #pylint: disable=C0415
+
+        Correction = recdata_correcting.Correction
+        recs_classes_set = set(recs_classes_list)
+        for classes in recs_classes_set:
+            recs_same_classes = []
+            for i in range(len(recs_classes_list)):
+                if recs_classes_list[i] == classes:
+                    recs_same_classes.append(recs_xy_list[i])
+            if classes == '编号':
+                # 矫正
+                corrected_recs_shape_data = Correction.correct_rec(recs_same_classes)
+                corrected_recs_xy_list = Recdata.get_xy_list(corrected_recs_shape_data)
+                # 裁切拼接图片
+                
+                # 调用数字识别
+
+            elif classes == '铭牌':
+                # 单独裁切每个rec，调用文字识别
+                pass

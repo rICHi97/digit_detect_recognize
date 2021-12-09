@@ -87,7 +87,7 @@ class RecdataIO(object):
         recs_xy_list：多个rec的四点坐标
         recs_classes：多个rec的类别信息
         """
-        
+        pass
 
     @staticmethod
     def write_rec_txt(recs_xy_list, txt_dir, txt_name):

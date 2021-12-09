@@ -4,7 +4,6 @@ Created on 2021-10-26 21:40:38
 
 @author: Li Zhi
 """
-import base64
 import math
 import os
 import os.path as path
@@ -15,20 +14,32 @@ import numpy as np
 from PIL import Image
 from shapely import geometry
 
+from . import cfg
 from ..recdata import recdata_processing
 
 EPSILON = 1e-4
 Polygon = geometry.Polygon
+RecdataProcess = recdata_processing.RecdataProcess
+
+def _get_img(img):
+
+    # TODO：路径检查
+    if isinstance(img, Image.Image):
+        pass
+    elif isinstance(img, str):
+        img = Image.open(img)
+
+    return img
+
 
 # TODO：img参数类型应该统一
 class ImageProcess(object):
     """
     用于处理图片
     """
-    coef_x_len, coef_y_len = 0.23, 0.02
-    
+    # TODO：仅裁切数字部分
     @staticmethod
-    def dump_rotate_img(img, xy_list):
+    def crop_rec(img, xy_list, coef_x_len=cfg.coef_x_len, coef_y_len=cfg.coef_y_len):
         """
         根据rec四点坐标，旋转图片从而裁切一个平置矩形
         Parameters
@@ -40,36 +51,40 @@ class ImageProcess(object):
         ----------
         rec_img：裁切的端子图片，经过旋转
         """
-
         # 选择较长的一组对边中最大的倾斜角作为rec倾斜角
+        img = _get_img(img).convert('RGB')
+        img = np.asarray(img, 'f')
+        img.flags.writeable = True
+        # TODO：注意xy_list顺序
         W1, W2, H1, H2 = recdata_processing.Recdata.get_four_edge_vectors(xy_list)
-        # gvl = get_vector_length, gvd = get_vector_degree, gpl = get_projection_length
-        gvl = lambda vector: np.linalg.norm(vector)
-        gvd = lambda vector: math.degrees(math.atan(vector[1] / vector[0] + EPSILON))
-        gpl = lambda weight_sin, weight_cos, degree: (
+        length_ = lambda vector: np.linalg.norm(vector)  #pylint: disable=W0108
+        degree_ = lambda vector: math.degrees(math.atan(vector[1] / vector[0] + EPSILON))
+        projection_length_ = lambda weight_sin, weight_cos, degree: (
             int(weight_sin * abs(math.sin(math.radians(degree)))) +
             int(weight_cos * abs(math.cos(math.radians(degree))))
-        )   
-        if max(gvl(W1), gvl(W2)) > max(gvl(H1), gvl(H2)):
-            degree = gvd(W1) if abs(gvd(W1)) > abs(gvd(W2)) else gvd(W2)
+        )
+        if max(length_(W1), length_(W2)) > max(length_(H1), length_(H2)):
+            degree = degree_(W1) if abs(degree_(W1)) > abs(degree_(W2)) else degree_(W2)
         else:
-            degree = 90 - abs(gvd(V1)) if abs(gvd(V1)) > abs(gvd(V2)) else 90 - abs(gvd(V2))
-            sign = np.sign(gvd(V1)) if abs(gvd(V1)) > abs(gvd(V2)) else np.sign(gvd(V2))
-            degree = -1 * sign * degree
+            V = H1 if abs(degree_(H1)) > abs(degree_(H2)) else H2
+            degree = degree_(V)
+            degree = -90 + degree if np.sign(degree) > 0 else 90 + degree
         height, width = img.shape[:2]
-        mat_rotation = cv2.getRotationMatrix2D((width / 2, height / 2), degree, 1)
-        
-        
-        height_new, width_new = gpl(width, height, degree), gpl(height, width, degree)
+        mat_rotation = cv2.getRotationMatrix2D((width / 2, height / 2), degree, 1)  #pylint: disable=E1101
+        height_new, width_new = (
+            projection_length_(width, height, degree), projection_length_(height, width, degree)
+        )
         # 拓展宽高
+        # matr_rotation[0, 2] = delta_x, mat_rotation[1, 2] = delta_y
         mat_rotation[0, 2] += (width_new - width) / 2
         mat_rotation[1, 2] += (height_new - height) / 2
-        img_rotation = cv2.warpAffine(
+        img_rotation = cv2.warpAffine(  #pylint: disable=E1101
             img, mat_rotation, (width_new, height_new), borderValue=(255, 255, 255),
         )
 
         # rt = right top, lb = left bottom
-        xy_list_42 = recdata_processing.RecdataProcess.from_18_to_42(xy_list)
+        xy_list_42 = RecdataProcess.from_18_to_42(RecdataProcess.reorder_rec(xy_list))
+        # 注意考虑xy_list顺序
         rt, lb = list(xy_list_42[0]), list(xy_list_42[2])
         rt_new = np.dot(mat_rotation, np.array([rt[0], rt[1], 1]))
         lb_new = np.dot(mat_rotation, np.array([lb[0], lb[1], 1]))
@@ -79,20 +94,74 @@ class ImageProcess(object):
         )
         # TODO：限制范围避免超出，还要研究
         # 我觉得rt应该是min(x, 宽度),max(y, 1)；
+        # TODO：一张更通用的方法求取端点，max min
         rt_new = [max(1, int(rt_new[0] + x_len)), max(1, int(rt_new[1] - y_len))]
         lb_new = [
             min(width_new - 1, int(lb_new[0] - x_len)), min(height_new - 1, int(lb_new[1] + y_len))
         ]
         rec_box = [lb_new[0], rt_new[1], rt_new[0], lb_new[1]]
-
+        img_rotation = np.uint8(img_rotation)
         img_rotation = Image.fromarray(img_rotation)
         img_rec = img_rotation.crop(rec_box)
 
         return img_rec
 
+    @staticmethod
+    def joint_rec(
+        img, 
+        recs_xy_list,
+        max_joint_img_width=cfg.max_joint_img_width, 
+        joint_img_height=cfg.joint_img_height, 
+        img_rec_height=cfg.img_rec_height, 
+        spacing=cfg.spacing,
+        joint_img_dir=cfg.joint_img_dir,
+        preprocess_img_rec=cfg.preprocess_img_rec,
+    ):
+        """
+        拼接多个rec为一张或多张图片
+        Parameters
+        ----------
+        max_joint_img_width：单张joint_img的最大宽度，超出则新建另一张
+        joint_img_height：joint_img的高度
+        img_rec_height：每张img_rec的高度，resize后粘贴
+        spacing：两张img_rec之间的间隔
+        joint_img_dir：输出joint_img路径
+
+        Returns
+        ----------
+        """
+        img_rec_list = []
+        for xy_list  in recs_xy_list:
+            img_rec = ImageProcess.crop_rec(img, xy_list)
+            assert (not img_rec.width == 0) and (not img_rec.height == 0), (
+                f'{xy_list}裁切图片的宽高应大于0'
+            )
+            img_rec = img_rec.resize(
+                (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
+            )
+            img_rec_list.append(img_rec)
+
+        available_width = max_joint_img_width
+        joint_img_cnt = 0
+        joint_img_name = f'joint_img_{joint_img_cnt}.jpg'
+        joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
+        paste_x, paste_y = 0, int((joint_img_height - img_rec_height) / 2)
+        for img_rec in img_rec_list:
+            # TODO：预处理
+            if available_width < spacing + img_rec.width:
+                joint_img_path = path.join(joint_img_dir, joint_img_name)
+                joint_img.save(joint_img_path)
+                joint_img_cnt += 1
+                joint_img_name = f'joint_img_{joint_img_cnt}'
+                joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
+                available_width, paste_x = max_joint_img_width, 0
+        
+            joint_img.paste(img_rec, (paste_x, paste_y))
+            available_width -= spacing + img_rec.width
+            paste_x += spacing + img_rec.width
+
+    # TODO：函数拆分，整理代码
     # TODO：主要花费时间为crop和save，后续尝试优化
-    # TODO：当某个label不完全存在裁切区域内，计算iou，大于阈值称为边界label
-    #       当边界label数量大于完全裁切label一定比例时
     # TODO：根据img大小自适应裁切次数
     @staticmethod
     def random_crop(img, label, output_dir, count, boundary_thres, boundary_ratio, label_keyword):

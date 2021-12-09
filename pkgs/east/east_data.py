@@ -243,7 +243,7 @@ class EastPreprocess(object):
                 xy_list = np.reshape(anno_array[:8].astype(float), (4, 2))
                 xy_list[:, 0] = xy_list[:, 0] * scale_ratio_w
                 xy_list[:, 1] = xy_list[:, 1] * scale_ratio_h
-                xy_list = RecdataProcess.reorder_vertexes(xy_list)
+                xy_list = RecdataProcess.reorder_rec(xy_list)
                 four_points = xy_list.copy()
                 xy_list = np.reshape(xy_list, -1).tolist()
                 if anno_array[8] == 'number':
@@ -498,14 +498,15 @@ class EastData(object):
         return y
 
     # TODO：预测classes功能可能需要拆分
+    # TODO：进一步研究nms
     @staticmethod
     def nms(
         predict,
         activation_pixels,
         side_vertex_pixel_threshold=cfg.side_vertex_pixel_threshold,
         trunc_threshold=cfg.trunc_threshold,
-        pixel_size=cfg.pixel_size
-        return_classes=False
+        pixel_size=cfg.pixel_size,
+        return_classes=False,
     ):
         """
         对预测结果非最大抑制。
@@ -567,7 +568,6 @@ class EastData(object):
             score_list[g_th] = total_score[:, 0]
             # recs_xy_list = (第i个像素score * 第i个像素p_v) / total_score
             recs_xy_list[g_th] = recs_xy_list[g_th] * pixel_size / (total_score + cfg.epsilon)
-            recs_classes_list[g_th] = '编号' if classes > 0.9 
 
         if return_classes:
             return score_list, recs_xy_list, recs_classes_list

@@ -14,15 +14,14 @@ sklearn中各方法输入数据格式为array，形状为n_samples * n_features
 import math
 
 import numpy as np
-from sklearn import linear_model, decomposition, preprocessing
+from sklearn import linear_model, decomposition
 
 from . import recdata_processing
-from ..tool import visualization
 
 LinearRegression = linear_model.LinearRegression
 PCA_ = decomposition.PCA
 
-RecdataProcess = recdata_processing.Recdata
+Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 
 EPSILON = 1e-4
@@ -490,6 +489,7 @@ class Regression(object):
 
 class Correction(object):
 
+    # TODO：cfg参数化
     min_rec_cnt_to_correct = 3
     reg_indep_vars = ['center']
     reg_dep_vars = ['length_W', 'length_H', 'rotate_angle_W']

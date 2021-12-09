@@ -16,14 +16,16 @@ from ..recdata import recdata_io, recdata_processing
 
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
-
+# TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
 def _get_img(img):
 
     # TODO：路径检查
     if isinstance(img, Image.Image):
-        return img
+        pass
     elif isinstance(img, str):
-        return Image.open(img)
+        img = Image.open(img)
+  
+    return img
 
 def _get_font(font, size=32):
 
@@ -34,7 +36,7 @@ def _get_font(font, size=32):
     elif font is None:
         return ImageFont.truetype('../source/font/HGBTS_CNKI.TTF')
 
-class ImgDraw(object):
+class ImageDraw(object):
     """
     主要用于在端子排图片上绘制
     """
@@ -87,7 +89,7 @@ class ImgDraw(object):
         ----------
         """
         for xy_list_or_shape_data in recs_xy_list_or_shape_data:  #pylint: disable=E1133
-            ImgDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
+            ImageDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
 
     # TODO：绘制整个文件夹中img
     @staticmethod
@@ -103,7 +105,7 @@ class ImgDraw(object):
         ----------
         """   
         recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_path_dir)
-        ImgDraw.draw_recs(recs_xy_list, img_dir, width, color, distinguish_first_side)
+        ImageDraw.draw_recs(recs_xy_list, img_dir, width, color, distinguish_first_side)
 
     @staticmethod
     def draw_text(text, xy_list, img, color='black', font=None, precision=2):
@@ -145,7 +147,7 @@ class ImgDraw(object):
             text = f'group_{group_index + 1}'
             for index_ in group:
                 xy_list = recs_xy_list[index_]
-                ImgDraw.draw_text(text, xy_list, img, color)
+                ImageDraw.draw_text(text, xy_list, img, color)
     
     @staticmethod
     def draw_gt_file(gt_filepath, img_filepath, max_train_img_size=832):
@@ -171,8 +173,8 @@ class ImgDraw(object):
                     classes = '编号'
                 xy_list = np.reshape(rec, (8,)).tolist()
                 # TODO：检查recs_xy_list是否两个反转了
-                ImgDraw.draw_rec(xy_list, img)
-                ImgDraw.draw_text(classes, xy_list, img)
+                ImageDraw.draw_rec(xy_list, img)
+                ImageDraw.draw_text(classes, xy_list, img)
         img.save('test.jpg')
 
         # TODO：输出分类信息
