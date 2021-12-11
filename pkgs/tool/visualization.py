@@ -36,7 +36,7 @@ def _get_font(font, size=32):
     elif font is None:
         return ImageFont.truetype('../source/font/HGBTS_CNKI.TTF')
 
-class ImageDraw(object):
+class RecDraw(object):
     """
     主要用于在端子排图片上绘制
     """
@@ -89,7 +89,7 @@ class ImageDraw(object):
         ----------
         """
         for xy_list_or_shape_data in recs_xy_list_or_shape_data:  #pylint: disable=E1133
-            ImageDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
+            RecDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
 
     # TODO：绘制整个文件夹中img
     @staticmethod
@@ -105,7 +105,7 @@ class ImageDraw(object):
         ----------
         """   
         recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_path_dir)
-        ImageDraw.draw_recs(recs_xy_list, img_dir, width, color, distinguish_first_side)
+        RecDraw.draw_recs(recs_xy_list, img_dir, width, color, distinguish_first_side)
 
     @staticmethod
     def draw_text(text, xy_list, img, color='black', font=None, precision=2):
@@ -147,7 +147,7 @@ class ImageDraw(object):
             text = f'group_{group_index + 1}'
             for index_ in group:
                 xy_list = recs_xy_list[index_]
-                ImageDraw.draw_text(text, xy_list, img, color)
+                RecDraw.draw_text(text, xy_list, img, color)
     
     @staticmethod
     def draw_gt_file(gt_filepath, img_filepath, max_train_img_size=832):
@@ -173,8 +173,8 @@ class ImageDraw(object):
                     classes = '编号'
                 xy_list = np.reshape(rec, (8,)).tolist()
                 # TODO：检查recs_xy_list是否两个反转了
-                ImageDraw.draw_rec(xy_list, img)
-                ImageDraw.draw_text(classes, xy_list, img)
+                RecDraw.draw_rec(xy_list, img)
+                RecDraw.draw_text(classes, xy_list, img)
         img.save('test.jpg')
 
         # TODO：输出分类信息

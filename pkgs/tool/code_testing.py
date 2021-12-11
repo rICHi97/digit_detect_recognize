@@ -4,23 +4,17 @@ Created on 2021-12-07 22:33:50
 
 @author: Li Zhi
 """
-import time
-import os
 import os.path as path
 
-import numpy as np
-from PIL import Image, ImageFont
+from PIL import Image
 
 from . import cfg, image_processing, visualization
-from ..east import east_data, east_net
-from ..recdata import recdata_correcting, recdata_io, recdata_processing
+from ..recdata import recdata_io, recdata_processing
 
 ImageProcess = image_processing.ImageProcess
 ImageDraw = visualization.ImageDraw
-EastData = east_data.EastData
-EastPreprocess = east_data.EastPreprocess
-EastNet = east_net.EastNet
 RecdataIO = recdata_io.RecdataIO
+RecdataRecognize = recdata_processing.RecdataRecognize
 
 # TODO：路径检查
 def _get_img(img):
@@ -44,14 +38,36 @@ def _get_recs_xy_list(recs_xy_list):
 class CodeTest(object):
 
     # TODO：测试对整个文件夹进行操作，目前仅支持操作单张img及recs_xy_list
+    # TODO：参数的命名可能要考虑
     @staticmethod
     def test_joint_rec(
         img_path_or_dir=cfg.test_joint_rec_img_path, 
         recs_xy_list_or_dir=cfg.test_joint_rec_txt_path,
     ):
         img = _get_img(img_path_or_dir)
+        img_name = path.basename(img_path_or_dir)[:-4]
         recs_xy_list = _get_recs_xy_list(recs_xy_list_or_dir)
-        ImageProcess.joint_rec(img, recs_xy_list)
+        ImageProcess.joint_rec(img, img_name, recs_xy_list)
+
+    @staticmethod
+    def test_recognize(
+        img_path=cfg.test_recognize_img_path,
+        recs_txt_path=cfg.test_recognize_recs_txt_path,
+    ):
+        """
+        Parameters
+        ----------
+        img_path：图片路径
+        recs_txt_path：label txt，每行数据包括4个端点坐标和类别信息
+        Returns
+        ----------
+        """    
+        img = _get_img(img_path)
+        img_name = path.basename(img_path)[:-4] 
+        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(
+            recs_txt_path, return_classes_list=True
+        )
+        RecdataRecognize.recognize(img, img_name, recs_xy_list, recs_classes_list)
 
 
 

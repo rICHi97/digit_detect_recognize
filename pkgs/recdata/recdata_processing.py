@@ -22,6 +22,8 @@ import requests
 
 import numpy as np
 
+from . import cfg
+
 _api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
 _secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
 _digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
@@ -45,7 +47,7 @@ def _get_vector_length(vector):
 
 def _get_vector_rotate_angle(vector):
 
-    rotate_angle = math.atan(vector[1] / vector[0] + EPSILON)
+    rotate_angle = math.atan(vector[1] / (vector[0] + EPSILON))
 
     return rotate_angle
 
@@ -99,7 +101,7 @@ class Recdata(object):
         return avg_rec_data
 
     @staticmethod
-    def get_four_edge_vectors(xy_list):
+    def get_four_edge_vectors(xy_list, return_array=False):
         """
         得到四边向量元组
         返回顺序为：W1，W2，H1，H2
@@ -118,6 +120,8 @@ class Recdata(object):
         H1 = [xy_list[1][0] - xy_list[2][0], xy_list[1][1] - xy_list[2][1]]
         H2 = [xy_list[0][0] - xy_list[3][0], xy_list[0][1] - xy_list[3][1]]
         edge_vectors = [W1, W2, H1, H2]
+        if return_array:
+            edge_vectors = [np.array(V) for V in edge_vectors]
 
         return edge_vectors
 
@@ -150,7 +154,7 @@ class Recdata(object):
         得到rec中心坐标
         Parameters
         ----------
-        xy_list：rec的4端点坐标
+        xy_list：rec的四端点坐标
 
         Returns
         ----------
@@ -165,6 +169,40 @@ class Recdata(object):
         return center_x, center_y
 
     @staticmethod
+    def get_edge_vector_center(xy_list, edge_vector):
+        """
+        Parameters
+        ----------
+        xy_list：rec的四端点坐标
+        edge_vetor：'W1'/'W2'/'H1'/'H2'
+
+        Returns
+        ----------
+        vector_center：（x，y）向量的中心
+        """
+        xy_list = RecdataProcess.reorder_rec(xy_list)
+        xy_list = RecdataProcess.from_18_to_42(xy_list)
+        vector_centers = {
+            'W1': (
+                0.5 * xy_list[0][0] + 0.5 * xy_list[1][0], 0.5 * xy_list[0][1] + 0.5 * xy_list[1][1]
+            ),
+            'W2': (
+                0.5 * xy_list[3][0] + 0.5 * xy_list[2][0], 0.5 * xy_list[3][1] + 0.5 * xy_list[2][1]
+            ),
+            'H1': (
+                0.5 * xy_list[1][0] + 0.5 * xy_list[2][0], 0.5 * xy_list[1][1] + 0.5 * xy_list[2][1]
+            ),
+            'H2': (
+                0.5 * xy_list[0][0] + 0.5 * xy_list[3][0], 0.5 * xy_list[0][1] + 0.5 * xy_list[3][1]
+            ),
+
+        }
+        vector_center = vector_centers[edge_vector]
+
+        return vector_center
+        
+
+    @staticmethod
     def get_rec_shape_data(
         xy_list,
         center=True, 
@@ -174,6 +212,7 @@ class Recdata(object):
         rotate_angle_H=True,
     ):
         """
+        获取用于矫正的形状位置数据
         Parameters
         ----------
         xy_list：框四点坐标
@@ -220,21 +259,6 @@ class Recdata(object):
 
         return rec_shape_data
 
-    @staticmethod
-    def get_draw_pos(xy_list, direction='center'):
-        """
-        获取基于每个rec框位置的绘制坐标
-        Parameters
-        ----------
-        xy_list：框四点坐标
-        # TODO：direction方位，可选'top'/'bottom'/'left'/'right'/'center'
-
-        Returns
-        ----------
-        pos：绘制坐标
-        """
-        pass
-
     # TODO：尝试改进，例如设四点坐标，通过方程求解
     @staticmethod
     def get_xy_list(rec_shape_data):
@@ -273,6 +297,64 @@ class Recdata(object):
         # TODO：从左上顶点逆时针
         return [rt[0], rt[1], lt[0], lt[1], lb[0], lb[1], rb[0], rb[1]]
 
+    @staticmethod
+    def get_draw_pos(xy_list, direction='center'):
+        """
+        获取基于每个rec框位置的绘制坐标
+        Parameters
+        ----------
+        xy_list：框四点坐标
+        # TODO：direction方位，可选'top'/'bottom'/'left'/'right'/'center'
+
+        Returns
+        ----------
+        pos：绘制坐标
+        """
+        pass
+
+    # TODO：尝试控制中心，不控制四向量权重
+    @staticmethod
+    def get_text_area(
+        xy_list, 
+        W_coef=cfg.W_coef, 
+        H_coef=cfg.H_coef,
+    ):
+        """
+        求取端子中心的文本（编号或铭牌信息）坐标
+        首先分别计算W的x坐标中点，然后文本中心的x坐标为：W_coef * W1 + (1 - W_coef) * W2
+        H同理
+        Parameters
+        ----------
+        xy_list：rec四点坐标
+        W_coef：计算文本中心x坐标时，W的权重。中心x坐标=W_coef * W1中点 + （1 - W_coef） * W2中点
+        H_coef：同W_coef，H的权重
+
+        Returns
+        ----------
+        text_xy_list：文本四点坐标
+        """
+        # coef = 0.5时，为中点；coef = 1时，为point_1
+        coef_point = lambda point_1, point_2, coef: coef * point_1 + (1 - coef) * point_2
+        # TODO：控制了中心点，就不控制各向量权重。
+        vertex = lambda center, W, H: center + 0.25 * W + 0.25 * H
+        edge_center_xy = []
+        for edge_vector, xy in zip(('W1', 'W2', 'H1', 'H2'), (0, 0, 1, 1)):
+            center_xy = Recdata.get_edge_vector_center(xy_list, edge_vector)[xy]
+            edge_center_xy.append(center_xy)
+        text_center_x = coef_point(edge_center_xy[0], edge_center_xy[1], W_coef)
+        text_center_y = coef_point(edge_center_xy[2], edge_center_xy[3], H_coef)
+        text_center = np.array([text_center_x, text_center_y])
+
+        W1, W2, H1, H2 = Recdata.get_four_edge_vectors(xy_list, return_array=True)
+        # r/l = right/left, t/b = top/bottom
+        rt = vertex(text_center, +W1, +H2)  #pylint: disable=E1130
+        lt = vertex(text_center, -W1, +H1)  #pylint: disable=E1130
+        lb = vertex(text_center, -W2, -H1)  #pylint: disable=E1130
+        rb = vertex(text_center, +W1, -H1)  #pylint: disable=E1130
+        text_area = [rt[0], rt[1], lt[0], lt[1], lb[0], lb[1], rb[0], rb[1]]
+
+        return text_area
+
 
 class RecdataProcess(object):
     """
@@ -291,7 +373,7 @@ class RecdataProcess(object):
 
         Returns
         ----------
-        reorder_xy_list:4x2格式rec端点坐标
+        reorder_xy_list:np 4 * 2 array，rec端点坐标
         """
         xy_list = np.array(xy_list).reshape((4, 2))
 
@@ -308,7 +390,7 @@ class RecdataProcess(object):
 
         Returns
         ----------
-        reorder_xy_list:4x2格式rec端点坐标        
+        xy_list:1 * 8 rec端点坐标，array或list
         """
         xy_list = np.array(xy_list).reshape(8)
         if return_list:
@@ -410,6 +492,7 @@ class RecdataProcess(object):
 
         return reorder_rec_xy_list
 
+    # TODO：单纯统一长度似乎没有必要
     @staticmethod
     def uniform_rec_edge_length(edge1, edge2):
         """
@@ -523,6 +606,7 @@ class RecdataProcess(object):
 
 class RecdataRecognize(object):
 
+
     @staticmethod
     def _get_access_token():
         global _access_token, _host  #pylint: disable=W0603
@@ -548,9 +632,13 @@ class RecdataRecognize(object):
             if response:
                 print(response.json())
 
+    # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
+    # TODO：多个rec的排序问题
     @staticmethod
-    def recognize(img, recs_xy_list, recs_classes_list):
+    def recognize(img, img_name, recs_xy_list, recs_classes_list):
         from . import recdata_correcting  #pylint: disable=C0415
+        from ..tool import image_processing  #pylint: disable=C0415
+        ImageProcess = image_processing.ImageProcess
 
         Correction = recdata_correcting.Correction
         recs_classes_set = set(recs_classes_list)
@@ -558,13 +646,18 @@ class RecdataRecognize(object):
             recs_same_classes = []
             for i in range(len(recs_classes_list)):
                 if recs_classes_list[i] == classes:
-                    recs_same_classes.append(recs_xy_list[i])
+                    recs_same_classes.append(RecdataProcess.reorder_rec(recs_xy_list[i]))
+            # TODO：裁切过程中好像裁切到了错误的rec，测试图片terminal_5_number_1.jpg
             if classes == '编号':
                 # 矫正
+                # TODO：非常紧急！correct后端子坐标好像有错
                 corrected_recs_shape_data = Correction.correct_rec(recs_same_classes)
-                corrected_recs_xy_list = Recdata.get_xy_list(corrected_recs_shape_data)
+                corrected_recs_xy_list = [
+                    Recdata.get_xy_list(rec_shape_data)
+                    for rec_shape_data in corrected_recs_shape_data
+                ]
                 # 裁切拼接图片
-                
+                ImageProcess.joint_rec(img, img_name, corrected_recs_xy_list)
                 # 调用数字识别
 
             elif classes == '铭牌':

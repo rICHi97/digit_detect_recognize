@@ -547,6 +547,7 @@ class Correction(object):
 
         Returns
         ----------
+        corrected_recs_shape_data：list，每个元素为shape data字典
         """
         corrected_recs_shape_data = [None for i in range(len(recs_xy_list))]
         pca_values = PCA.get_pca_values(recs_xy_list)
@@ -571,6 +572,7 @@ class Correction(object):
                     norm_width=None,
                     norm_height=None,
                     coef=None,
+                    
                     avg=False, 
                     return_original=False,
                     independent=Correction.reg_indep_vars,

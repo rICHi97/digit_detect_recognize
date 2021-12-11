@@ -20,7 +20,7 @@ class RecdataIO(object):
     读取txt文件，写入txt文件
     """
     @staticmethod
-    def read_rec_txt(txt_path):
+    def read_rec_txt(txt_path, return_classes_list=False):
         """
         读取一张图片的rec txt文件
         将其转为该图片中所有rec四点坐标的列表
@@ -33,17 +33,22 @@ class RecdataIO(object):
         ----------
         """
         recs_xy_list = []
+        classes_list = []
         with open(txt_path, 'r', encoding='utf8') as rec_txt:
             lines = rec_txt.readlines()
             for line in lines:
-                line = line.split(',')
+                line = line.strip().split(',')
                 # len = 8，是recs_xy_list txt；
                 # len = 9，是label txt
                 if len(line) == 9:
+                    classes = '编号' if line[-1] == 'number' else '铭牌'                    
                     line = line[:-1]
                 xy_list = [float(xy) for xy in line]
                 recs_xy_list.append(xy_list)
-
+                classes_list.append(classes)
+                
+        if return_classes_list:
+            return recs_xy_list, classes_list
         return recs_xy_list
 
     @staticmethod
