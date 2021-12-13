@@ -144,6 +144,8 @@ def _get_filter_data(data_list, filter_nan=True):
 # TODO：同一张图片的data保存以便后续使用
 # tarin_data_dict = {'img_name':, 'train_data':}
 
+
+# TODO：PCA可以不需要依赖序号信息，pca后从小到大排序算间距
 class PCA(object):
     """
     PCA及基于pca value的分组

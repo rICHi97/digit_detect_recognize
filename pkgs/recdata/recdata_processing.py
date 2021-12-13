@@ -650,7 +650,7 @@ class RecdataRecognize(object):
             # TODO：裁切过程中好像裁切到了错误的rec，测试图片terminal_5_number_1.jpg
             if classes == '编号':
                 # 矫正
-                # TODO：非常紧急！correct后端子坐标好像有错
+                # TODO：correct后端子坐标好像有错
                 corrected_recs_shape_data = Correction.correct_rec(recs_same_classes)
                 corrected_recs_xy_list = [
                     Recdata.get_xy_list(rec_shape_data)
