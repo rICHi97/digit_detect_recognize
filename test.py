@@ -11,10 +11,9 @@ from pkgs.tool import code_testing
 start = time.process_time()
 
 CodeTest = code_testing.CodeTest
-# CodeTest.test_recognize()
+rec_data = CodeTest.test_recognize()
 
 end = time.process_time()
 print(end - start)
 
-from pkgs.ui import tool
-tool.Tool.update_qt_designer_code()
+

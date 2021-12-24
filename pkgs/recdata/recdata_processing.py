@@ -18,6 +18,8 @@ vector为rec的四边向量，向量指向为从左至右，从下至上
 """
 import base64
 import math
+import os
+from os import path
 import requests
 
 import numpy as np
@@ -51,6 +53,39 @@ def _get_vector_rotate_angle(vector):
 
     return rotate_angle
 
+
+# TODO：Rec和Recdata可以整合
+class Rec(object):
+
+    def __init__(self, xy_list, classes, text=None, joint_img_name=None, joint_x_position=None):
+        self.xy_list = xy_list
+        self.classes = classes
+        self.text = text
+        self.joint_img_name = joint_img_name
+        self.joint_x_position = joint_x_position
+
+    def set_attr(self, **attrs):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        for key, value in attrs.items():
+            assert key in ('xy_list', 'classes', 'text', 'joint_img_name', 'joint_x_position'), (
+                f'不存在属性{key}'
+            )
+            if key == 'xy_list':
+                self.xy_list = value
+            elif key == 'classes':
+                self.classes = value
+            elif key == 'text':
+                self.text = value
+            elif key == 'joint_img_name':
+                self.joint_img_name = value
+            elif key == 'joint_x_position':
+                self.joint_x_position = value
 
 class Recdata(object):
     """
@@ -205,10 +240,10 @@ class Recdata(object):
     @staticmethod
     def get_rec_shape_data(
         xy_list,
-        center=True, 
-        length_W=True, 
-        length_H=True, 
-        rotate_angle_W=True, 
+        center=True,
+        length_W=True,
+        length_H=True,
+        rotate_angle_W=True,
         rotate_angle_H=True,
     ):
         """
@@ -312,22 +347,23 @@ class Recdata(object):
         """
         pass
 
-    # TODO：尝试控制中心，不控制四向量权重
     @staticmethod
     def get_text_area(
         xy_list, 
-        W_coef=cfg.W_coef, 
+        x_coef=cfg.x_coef, 
+        y_coef=cfg.y_coef,
+        W_coef=cfg.W_coef,
         H_coef=cfg.H_coef,
     ):
         """
         求取端子中心的文本（编号或铭牌信息）坐标
-        首先分别计算W的x坐标中点，然后文本中心的x坐标为：W_coef * W1 + (1 - W_coef) * W2
+        首先分别计算W的x坐标中点，然后文本中心的x坐标为：x_coef * W1 + (1 - x_coef) * W2
         H同理
         Parameters
         ----------
         xy_list：rec四点坐标
-        W_coef：计算文本中心x坐标时，W的权重。中心x坐标=W_coef * W1中点 + （1 - W_coef） * W2中点
-        H_coef：同W_coef，H的权重
+        x_coef：计算文本中心x坐标时，W的权重。中心x坐标=x_coef * W1中点 + （1 - x_coef） * W2中点
+        y_coef：同x_coef，H的权重
 
         Returns
         ----------
@@ -335,14 +371,13 @@ class Recdata(object):
         """
         # coef = 0.5时，为中点；coef = 1时，为point_1
         coef_point = lambda point_1, point_2, coef: coef * point_1 + (1 - coef) * point_2
-        # TODO：控制了中心点，就不控制各向量权重。
-        vertex = lambda center, W, H: center + 0.25 * W + 0.25 * H
+        vertex = lambda center, W, H: center + W_coef * W + H_coef * H
         edge_center_xy = []
         for edge_vector, xy in zip(('W1', 'W2', 'H1', 'H2'), (0, 0, 1, 1)):
             center_xy = Recdata.get_edge_vector_center(xy_list, edge_vector)[xy]
             edge_center_xy.append(center_xy)
-        text_center_x = coef_point(edge_center_xy[0], edge_center_xy[1], W_coef)
-        text_center_y = coef_point(edge_center_xy[2], edge_center_xy[3], H_coef)
+        text_center_x = coef_point(edge_center_xy[0], edge_center_xy[1], x_coef)
+        text_center_y = coef_point(edge_center_xy[2], edge_center_xy[3], y_coef)
         text_center = np.array([text_center_x, text_center_y])
 
         W1, W2, H1, H2 = Recdata.get_four_edge_vectors(xy_list, return_array=True)
@@ -492,6 +527,51 @@ class RecdataProcess(object):
 
         return reorder_rec_xy_list
 
+    @staticmethod
+    def reorder_recs(recs_xy_list, order='ascending'):
+        """
+        先计算所有recs的中心坐标，然后先按y的顺序排
+        基本上就是按y的顺序排，相同的y几乎不可能
+        nms中pixel_size = 4，可能同一个y pixel上有多个x pixel
+        对于特别倾斜的端子排可以会出现问题，比如右边一列的第二个在左边的上面
+        Parameters
+        ----------
+        recs_xy_list：多个rec的四点坐标或多个Rec实例，Rec实例有属性xy_list, text, classes
+        
+        Returns
+        ----------
+        """
+        orders = ('ascending', 'descending', 'random')
+        assert order in orders, f'order must in {orders}'
+        assert isinstance(recs_xy_list[0], (list, np.ndarray, Rec)), 'recs_xy_list元素不合要求'
+        is_rec = bool(isinstance(recs_xy_list[0], Rec))
+
+        def center_y(xy_list_or_rec):
+            nonlocal is_rec
+            xy_list = xy_list_or_rec.xy_list if is_rec else xy_list_or_rec
+            center_y = Recdata.get_rec_shape_data(
+                xy_list=xy_list,
+                center=True,
+                length_W=False,
+                length_H=False,
+                rotate_angle_W=True,
+                rotate_angle_H=False,
+            )['center'][1]
+
+            return center_y
+
+
+        if not order == 'random':
+            # sorted
+            reverse = bool(order == 'descending')
+            # ordered_recs = sorted(recs_xy_list, key=center_y, reverse=reverse)
+            recs_xy_list.sort(key=center_y, reverse=reverse)
+        else:
+            # TODO：randomlized
+            pass
+
+        return recs_xy_list
+
     # TODO：单纯统一长度似乎没有必要
     @staticmethod
     def uniform_rec_edge_length(edge1, edge2):
@@ -555,19 +635,19 @@ class RecdataProcess(object):
 
     # TODO：研究代码
     @staticmethod
-    def shrink(xy_list, ratio):    
+    def shrink(xy_list, ratio):
         """
         收缩边
         Parameters
         ----------
-    
+
         Returns
         ----------
         """
         if ratio == 0.0:
             return xy_list, xy_list
         # TODO：距离计算利用已有api
-        # 四个向量，分别为V21, V32, V43, V14 
+        # 四个向量，分别为V21, V32, V43, V14
         diff_1to3 = xy_list[:3, :] - xy_list[1:4, :]
         diff_4 = xy_list[3:4, :] - xy_list[0:1, :]
         diff = np.concatenate((diff_1to3, diff_4), axis=0)
@@ -595,17 +675,16 @@ class RecdataProcess(object):
         # shrink two long edges
         temp_new_xy_list = np.copy(xy_list)
         RecdataProcess._shrink_edge(xy_list, temp_new_xy_list, long_edge, r, theta, ratio)
-        RecdataProcess._shrink_edge(xy_list, temp_new_xy_list, long_edge + 2, r, theta, ratio)                            
+        RecdataProcess._shrink_edge(xy_list, temp_new_xy_list, long_edge + 2, r, theta, ratio)
         # shrink two short edges
         new_xy_list = np.copy(temp_new_xy_list)
         RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge, r, theta, ratio)
         RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, ratio)
 
-        return temp_new_xy_list, new_xy_list, long_edge      
+        return temp_new_xy_list, new_xy_list, long_edge
 
 
 class RecdataRecognize(object):
-
 
     @staticmethod
     def _get_access_token():
@@ -616,50 +695,113 @@ class RecdataRecognize(object):
 
         return _access_token
 
+    # TODO：url等常量设置为类常量或cfg常量
     @staticmethod
-    def _request_post():
-        ...
-
-    @staticmethod
-    def character_recognize(img_path):
+    def _recognize(img_path, classes=None):
+        assert  classes in ('plate', 'number'), 'classes参数错误'
+        access_token = RecdataRecognize._get_access_token()
         with open(img_path, 'rb') as f:
             img = base64.b64encode(f.read())
-            params = {'image': img}
-            access_token = RecdataRecognize._get_access_token()
+        params = {'image': img}
+        if classes == 'plate':
             request_url = f'{_character_request_url}?access_token={access_token}'
-            headers = {'content-type': 'application/x-www-form-urlencoded'}
-            response = requests.post(request_url, data=params, headers=headers)
-            if response:
-                print(response.json())
+        else:
+            request_url = f'{_digit_request_url}?access_token={access_token}'
+            params['recognize_granularity'] = 'small'
+        headers = {'content-type': 'application/x-www-form-urlencoded'}
+        response = requests.post(request_url, data=params, headers=headers)
+        if response.json()['words_result_num'] > 0:
+            # words_result包含多个word_result
+            # word_result = {'chars'：字符列表, 'words'：所有字符组成的words, 'location'：words位置}
+            # chars包含多个char
+            # char = {'char'：单字符, 'location'：字符位置}
+            words_result = response.json()['words_result']
+
+            return words_result
 
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
     # TODO：多个rec的排序问题
     @staticmethod
-    def recognize(img, img_name, recs_xy_list, recs_classes_list):
+    def recognize(img, img_name, recs_xy_list, recs_classes_list, joint_img_dir=cfg.joint_img_dir):
+        """
+        Parameters
+        ----------
+
+        Returns
+        ----------
+        """
         from . import recdata_correcting  #pylint: disable=C0415
         from ..tool import image_processing  #pylint: disable=C0415
         ImageProcess = image_processing.ImageProcess
-
         Correction = recdata_correcting.Correction
-        recs_classes_set = set(recs_classes_list)
-        for classes in recs_classes_set:
-            recs_same_classes = []
-            for i in range(len(recs_classes_list)):
-                if recs_classes_list[i] == classes:
-                    recs_same_classes.append(RecdataProcess.reorder_rec(recs_xy_list[i]))
-            # TODO：裁切过程中好像裁切到了错误的rec，测试图片terminal_5_number_1.jpg
-            if classes == '编号':
-                # 矫正
-                # TODO：correct后端子坐标好像有错
-                corrected_recs_shape_data = Correction.correct_rec(recs_same_classes)
-                corrected_recs_xy_list = [
-                    Recdata.get_xy_list(rec_shape_data)
-                    for rec_shape_data in corrected_recs_shape_data
-                ]
-                # 裁切拼接图片
-                ImageProcess.joint_rec(img, img_name, corrected_recs_xy_list)
-                # 调用数字识别
 
-            elif classes == '铭牌':
-                # 单独裁切每个rec，调用文字识别
-                pass
+        recognize_data = []
+        # 排序所有rec，按y从小到大顺序，对两列同样有效
+        recs_list = RecdataProcess.reorder_recs(
+            [Rec(xy_list, classes) for xy_list, classes in zip(recs_xy_list, recs_classes_list)]
+        )
+        recs_classes_set = set(recs_classes_list)
+        joint_data = {}
+        for classes in recs_classes_set:
+            assert classes in ('编号', '铭牌'), f'{classes}不合规'
+            recs_same_classes = [rec for rec in recs_list if rec.classes == classes]
+            # TODO：英文classes
+            classes = 'number' if classes == '编号' else 'plate'
+            if classes == 'number':
+                # 矫正
+                recs_xy_list = [rec.xy_list for rec in recs_same_classes]
+                recs_shape_data = Correction.correct_rec(recs_xy_list)
+                recs_xy_list = [
+                    Recdata.get_text_area(Recdata.get_xy_list(rec_shape_data))
+                    for rec_shape_data in recs_shape_data
+                ]
+            else:
+                recs_xy_list = [
+                    Recdata.get_text_area(rec.xy_list)
+                    for rec in recs_same_classes
+                ]
+            joint_data.update(
+                ImageProcess.joint_rec(
+                    img, img_name, recs_xy_list, classes, joint_img_dir=joint_img_dir
+                )
+            )
+
+        this_joint_img_dir = path.join(joint_img_dir, img_name)
+        for file in os.listdir(this_joint_img_dir):
+            img_path = path.join(this_joint_img_dir, file)
+            classes = file.split('_')[0]
+            words_result = RecdataRecognize._recognize(img_path, classes)
+            if words_result is None:
+                break
+            file_joint_data = joint_data[file]
+            if classes == 'number':
+                chars, locations = [], []
+                for word_result in words_result:
+                    chars += [_['char'] for _ in word_result['chars']]
+                    # 字符的中心x坐标
+                    locations += [
+                        _['location']['left'] + _['location']['width'] / 2
+                        for _ in word_result['chars']
+                    ]
+                for i, location in enumerate(locations):
+                    for rec in file_joint_data:
+                        l, r = rec.joint_x_position[0], rec.joint_x_position[1]
+                        # TODO：可以略微有一点余量，可以和上个端子的右侧以及下个端子的左侧比较
+                        if l < location < r:
+                            j = file_joint_data.index(rec)
+                            rec = file_joint_data.pop(j)
+                            rec.text = chars[i]
+                            recognize_data.append(rec)
+                            break
+                        # locations是递增的，当前l已经大于location了，之后的没必要比较
+                        if location < l:
+                            break
+                    # rec在joint中已包含xy_list信息
+            else:
+                # 铭牌图片不拼接，一张图片只有一个rec
+                # TODO：是否会识别到多个word_result
+                rec, word_result = file_joint_data[0], words_result[0]
+                rec.text = word_result['words']
+                recognize_data.append(rec)
+
+        return recognize_data

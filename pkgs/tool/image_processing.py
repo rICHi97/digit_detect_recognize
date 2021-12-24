@@ -3,6 +3,7 @@
 Created on 2021-10-26 21:40:38
 
 @author: Li Zhi
+本模块对图片进行处理。
 """
 import math
 import os
@@ -19,6 +20,7 @@ from ..recdata import recdata_processing
 
 Polygon = geometry.Polygon
 
+Rec = recdata_processing.Rec
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 
@@ -112,11 +114,13 @@ class ImageProcess(object):
 
         return img_rec
 
+    # TODO：裁切铭牌无效
     @staticmethod
     def joint_rec(
         img,
         img_name, 
         recs_xy_list,
+        classes,
         max_joint_img_width=cfg.max_joint_img_width, 
         joint_img_height=cfg.joint_img_height, 
         img_rec_height=cfg.img_rec_height, 
@@ -128,47 +132,77 @@ class ImageProcess(object):
         拼接多个rec为一张或多张图片
         Parameters
         ----------
+        TODO：自动去除拓展名
+        img_name：不含拓展名的图片名
         max_joint_img_width：单张joint_img的最大宽度，超出则新建另一张
         joint_img_height：joint_img的高度
         img_rec_height：每张img_rec的高度，resize后粘贴
         spacing：两张img_rec之间的间隔
         joint_img_dir：输出joint_img路径
+        --joint_img_dir：所有joint_img的dir
+        ----this_joint_img_dir:该张端子排图片所有classes rec存储在一个dir中
 
         Returns
         ----------
+        joint_data：字典，结构为
+        {'classes_cnt.jpg':[Rec1, Rec2, Rec3]}
         """
+
+        # TODO：铭牌大小不能超过api限制
+        this_joint_img_dir = path.join(joint_img_dir, img_name)
+        if not path.exists(this_joint_img_dir):
+            os.mkdir(this_joint_img_dir)
+        cnt = 0
+        joint_img_name = f'{classes}_{cnt}.jpg'    
+        joint_data = {joint_img_name: []}
+
         img_rec_list = []
+        # classes='plate'，recs_xy_list只有一个xy_list
         for xy_list  in recs_xy_list:
             img_rec = ImageProcess.crop_rec(img, xy_list)
             assert (not img_rec.width == 0) and (not img_rec.height == 0), (
                 f'{xy_list}裁切图片的宽高应大于0'
             )
+
+            if classes == 'plate':
+                rec = Rec(xy_list=xy_list, classes=classes)
+                joint_data[joint_img_name].append(rec)
+                joint_img_path = path.join(this_joint_img_dir, joint_img_name)
+                img_rec.save(joint_img_path)
+                return joint_data
+                
             img_rec = img_rec.resize(
                 (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
             )
             img_rec_list.append(img_rec)
+        assert len(img_rec_list) == len(recs_xy_list), '有rec裁切失败'
 
-        available_width = max_joint_img_width
-        joint_img_cnt = 0
-        joint_img_name = f'joint_img_{joint_img_cnt}.jpg'
         joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
+        available_width = max_joint_img_width
         paste_x, paste_y = 0, int((joint_img_height - img_rec_height) / 2)
-        joint_img_dir = path.join(joint_img_dir, img_name)
-        if not path.exists(joint_img_dir):
-            os.mkdir(joint_img_dir)
-        for img_rec in img_rec_list:
+        for i, img_rec in enumerate(img_rec_list):
             # img_rec = ImageProcess.preprocess_img(img_rec)
             if available_width < spacing + img_rec.width:
-                joint_img_path = path.join(joint_img_dir, joint_img_name)
+                joint_img_path = path.join(this_joint_img_dir, joint_img_name)
                 joint_img.save(joint_img_path)
-                joint_img_cnt += 1
-                joint_img_name = f'joint_img_{joint_img_cnt}.jpg'
+                cnt += 1
+                joint_img_name = f'{classes}_{cnt}.jpg'
                 joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
-                available_width, paste_x = max_joint_img_width, 0
-        
+                joint_data[joint_img_name] = []
+                available_width = max_joint_img_width
+                paste_x = 0
+
             joint_img.paste(img_rec, (paste_x, paste_y))
-            available_width -= spacing + img_rec.width
             paste_x += spacing + img_rec.width
+            available_width -= spacing + img_rec.width
+            rec = Rec(xy_list=recs_xy_list[i], classes=classes)
+            rec.set_attr(
+                joint_img_name=joint_img_name, joint_x_position=(paste_x, paste_x + img_rec.width)
+            )
+            joint_data[joint_img_name].append(rec)
+
+        return joint_data
+
 
     @staticmethod
     def preprocess_img(

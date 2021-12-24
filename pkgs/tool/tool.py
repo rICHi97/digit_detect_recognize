@@ -3,6 +3,7 @@
 Created on 2021-12-13 18:25:46
 
 @author: Li Zhi
+本模块主要提供对文件的操作。
 """
 import os
 from os import path
@@ -12,7 +13,7 @@ import shutil
 from . import cfg
 
 
-class Tool():
+class UiTool():
     """
     """
     @staticmethod
@@ -54,11 +55,9 @@ class Tool():
         Returns
         ----------
         """
-        old_files = os.listdir(old_code_dir)
-        old_files = [
-            old_file for old_file in old_files if keyword in old_file and '.py' in old_file
-        ]
-        for file in old_files:
+        new_files = os.listdir(new_code_dir)
+        new_files = [file for file in new_files if keyword in file and '.py' in file]
+        for file in new_files:
             new_file = path.join(new_code_dir, file)
             shutil.copy(new_file, old_code_dir)
 

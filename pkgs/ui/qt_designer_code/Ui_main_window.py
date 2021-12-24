@@ -123,7 +123,7 @@ class Ui_MainWindow(object):
         self.pushButton_2.setStatusTip(_translate("MainWindow", "选择端子排图片。"))
         self.pushButton_2.setText(_translate("MainWindow", "选择图片"))
         self.pushButton_3.setStatusTip(_translate("MainWindow", "开始自动识别所选择图片。"))
-        self.pushButton_3.setText(_translate("MainWindow", "确认"))
+        self.pushButton_3.setText(_translate("MainWindow", "开始识别"))
         self.label.setText(_translate("MainWindow", "当前未连接到数据库。"))
         self.menu.setTitle(_translate("MainWindow", "设置(&S)"))
         self.menu_2.setTitle(_translate("MainWindow", "帮助(&H)"))
@@ -138,6 +138,7 @@ class Ui_MainWindow(object):
         self.actionrecognize.setStatusTip(_translate("MainWindow", "设置识别端子及铭牌文本功能的相关参数。"))
         self.actionrecognize.setShortcut(_translate("MainWindow", "Ctrl+R"))
 import res_rc
+
 
 if __name__ == "__main__":
     import sys

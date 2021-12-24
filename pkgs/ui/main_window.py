@@ -50,11 +50,10 @@ class MainWindow():
     # 如果需要涉及别的窗口，将其信号封装，在ui_integrated中连接
     # MainWindow().connect['clicked_connect_db'](callable_object)
     def _setup_signal(self):
-        self.ui_main_window.pushButton_2.clicked.connect(self.on_btn_clicked)
         self.connect = {
-            'clicked_connect_db': self.ui_main_window.pushButton.clicked.connect,
-            'clicked_choose_img': self.ui_main_window.pushButton_2.clicked.connect,
-            'clicked_start_recognize': self.ui_main_window.pushButton_3.clicked.connect,
+            'click_connect_db': self.ui_main_window.pushButton.clicked.connect,
+            'click_choose_img': self.ui_main_window.pushButton_2.clicked.connect,
+            'click_start_recognize': self.ui_main_window.pushButton_3.clicked.connect,
         }
 
     def show(self):  #pylint: disable=C0116
@@ -65,11 +64,7 @@ class MainWindow():
         self.main_window.close()
 
     def on_btn_clicked(self):
-        sender = self.main_window.sender()
-        assert sender.text() in ('选择图片',)
-        if sender.text() == '选择图片':
-            # 类似连接数据库窗口，选择相机或相册
-            pass
+        pass
 
     def set_terminal_img(self, img_path):
         """

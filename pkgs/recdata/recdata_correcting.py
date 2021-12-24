@@ -14,12 +14,15 @@ sklearn中各方法输入数据格式为array，形状为n_samples * n_features
 import math
 
 import numpy as np
-from sklearn import linear_model, decomposition
+from sklearn import linear_model, decomposition, preprocessing
 
 from . import recdata_processing
 
 LinearRegression = linear_model.LinearRegression
 PCA_ = decomposition.PCA
+MaxAbsScaler = preprocessing.MaxAbsScaler
+MinMaxScaler = preprocessing.MinMaxScaler
+StandardScaler = preprocessing.StandardScaler
 
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
@@ -27,10 +30,9 @@ RecdataProcess = recdata_processing.RecdataProcess
 EPSILON = 1e-4
 _filter_nan_data = lambda data_list: [data for data in data_list if not math.isnan(data)]
 
+# TODO：自动生成rec坐标进行测试
 def _get_train_data(
     recs_xy_list,
-    norm_width,
-    norm_height,
     center,
     length_W,
     length_H,
@@ -38,7 +40,7 @@ def _get_train_data(
     rotate_angle_H,
     coef,
     avg,
-    ):
+):
     """
     获取用于sklearn的数据
     Parameters
@@ -66,12 +68,6 @@ def _get_train_data(
     for xy_list in recs_xy_list:
 
         data_list = []
-        # 归一化
-        xy_list = RecdataProcess.from_42_to_18(xy_list)
-        if norm_width is not None and norm_height is not None:
-            for i in range(4):
-                xy_list[2 * i] /= norm_width
-                xy_list[2 * i + 1] /= norm_height
 
         # 获取形状数据
         shape_data = Recdata.get_rec_shape_data(
@@ -153,10 +149,9 @@ class PCA(object):
     # TODO：一定需要归一化？
     # TODO：不归一化时，二阶和一阶差值的数量级会差距较多
     # TODO：考虑加自动归一化，除以最大xy值
-    def get_pca_values(  #pylint: disable=E0213
+    @staticmethod
+    def get_pca_values(
         recs_xy_list,
-        norm_width=None,
-        norm_height=None,
         center=True,
         length_W=False,
         length_H=False,
@@ -164,7 +159,7 @@ class PCA(object):
         rotate_angle_H=False,
         coef=None,
         avg=True,
-        return_instance=False,
+        preprocessing_='min_max',
     ):
         """
         对rec数据降维，目前暂定原始数据为中心坐标，降维至1维
@@ -172,8 +167,6 @@ class PCA(object):
         Parameters
         ----------
         recs_xy_list：多个rec的四点坐标
-        norm_width：归一化宽度，一般为rec所属图片的宽度
-        norm_height：归一化高度，一般为rec所属图片的高度
         center=True：原始数据是否包括中心坐标
         length_W=False：原始数据是否包括宽度向量长度
         length_H=False：原始数据是否包括高度向量长度
@@ -182,7 +175,6 @@ class PCA(object):
         coef=[1, 1, 1, 1, 1, 1]：原始数据在PCA前的系数，其中center包括xy两个系数
         # TODO：可能需考虑每个特征是否取平均
         avg：length、rotate_angle是否取两条对边的平均值
-        return_instance：是否返回PCA实例对象
 
         Returns
         ----------
@@ -192,22 +184,32 @@ class PCA(object):
 
         sklearn_data = _get_train_data(
             recs_xy_list,
-            norm_width,
-            norm_height,
             center,
             length_W,
             length_H,
             rotate_angle_W,
             rotate_angle_H,
             coef,
-            avg
+            avg,
         )
+        if preprocessing_ is not None:
+            assert preprocessing_ in ('min_max', 'max_abs', 'standard', ), (
+                f'preprocessing参数不能为{preprocessing}'
+            )
+            preprocessing_ = {
+                'min_max': MinMaxScaler,
+                'max_abs': MaxAbsScaler,
+                'standard': StandardScaler,
+            }[preprocessing_]
+            sklearn_data = preprocessing_().fit_transform(sklearn_data)
+
         pca_ = PCA_(n_components=1).fit(sklearn_data)
         pca_values = pca_.transform(sklearn_data)
         pca_values = [value[0] for value in pca_values]
-        if not return_instance:
-            return pca_values
 
+        return pca_values
+
+    @staticmethod
     def get_delta_values(delta_order, pca_values):
         """
         由pca value得到差值value
@@ -249,20 +251,14 @@ class PCA(object):
         --'index'：list，元素为每组的index
         --'value'：list，每组的pca_value
         """
-        def get_delta_ratio(pca_values):
-            # 尝试通过将原始pca值映射到[0, 1]来计算
+        def get_delta_ratio(pca_values): # delta_ratio = pca_delta2 / pca_delta1
+
             # TODO：在双列端子上验证效果
-            new_pca_values = []
-            min_pca_value, max_pca_value = min(pca_values), max(pca_values)
-            span_pca_value = max_pca_value - min_pca_value
-            for pca_value in pca_values:
-                new_pca_value = (pca_value - min_pca_value) / span_pca_value
-                new_pca_values.append(new_pca_value)
 
             # 判断一阶差值均值和二阶差值均值的比值
             delta_one_values, delta_two_values = (
-                PCA.get_delta_values(1, new_pca_values),
-                PCA.get_delta_values(2, new_pca_values),
+                PCA.get_delta_values(1, pca_values),
+                PCA.get_delta_values(2, pca_values),
             )
             avg_delta_one_value, avg_delta_two_value = (
                 _get_avg(delta_one_values),
@@ -318,7 +314,7 @@ class PCA(object):
             return divide_groups
 
         def divide_two_cols(pca_values):
-
+            # TODO：这里分组分错了，因为
             group1_index, group2_index = [], []
             group1_value, group2_value = [], []
             for index_, value in enumerate(pca_values):
@@ -340,11 +336,9 @@ class PCA(object):
         distribution_types = ('one_col', 'two_cols', 'one_col_n_lines')
         # 端子如果单列分布，avg_delta_two_value大致为avg_delta_one_value的两倍
         # 考虑一定的裕度
-        delta_ratio = get_delta_ratio(pca_values)
+        delta_ratio = get_delta_ratio(pca_values) 
         one_col_range = [1.8, 2.5]
-        is_num_in_range = (
-            lambda num, range_: True if num > range_[0] and num < range_[1] else False
-        )
+        is_num_in_range = lambda num, range_: bool(range_[0] < num < range_[1])
 
         # 此时为单列分布
         if is_num_in_range(delta_ratio, one_col_range):
@@ -359,6 +353,7 @@ class PCA(object):
 
 class Regression(object):
 
+    @staticmethod
     def _correct_rec_center(center_xy_data):
         """
         在对端子矫正前，先对xy坐标进行预矫正，基本思路是通过y坐标矫正x坐标
@@ -393,15 +388,14 @@ class Regression(object):
         return new_center_xy_data
 
     # TODO：比较归一化对结果的影响
+    # TODO：去除norm_width和norm_height，使用别的方法进行标准化
+    @staticmethod
     def regression(
         recs_xy_list,
-        norm_width=None,
-        norm_height=None,
         coef=None,
         avg=False,  # TODO：暂时不考虑avg，默认所有变量都不取平均
-        return_original=False,
         **regression_vars,
-        ):
+    ):
         """
         通过回归矫正端子
         回归自变量暂定中心坐标
@@ -438,8 +432,6 @@ class Regression(object):
 
             regression_data = _get_train_data(
                 recs_xy_list,
-                norm_width,
-                norm_height,
                 vars_['center'],
                 vars_['length_W'],
                 vars_['length_H'],
@@ -497,6 +489,7 @@ class Correction(object):
     reg_dep_vars = ['length_W', 'length_H', 'rotate_angle_W']
 
     # TODO：求平均倾斜角
+    @staticmethod
     def _get_avg_rotate_angle_H(recs_xy_list):
 
         rotate_angle_H1_list, rotate_angle_H2_list = [], []
@@ -535,6 +528,7 @@ class Correction(object):
 
     # TODO：矫正端子，返回矫正后端子数据
     # TODO：矫正前也许需要先LOF筛选异常值
+    @staticmethod
     def correct_rec(recs_xy_list):
         """
         对端子数据进行矫正。
@@ -571,12 +565,8 @@ class Correction(object):
                 )
                 reg_shape_data = Regression.regression(
                     recs_group,
-                    norm_width=None,
-                    norm_height=None,
                     coef=None,
-                    
-                    avg=False, 
-                    return_original=False,
+                    avg=False,
                     independent=Correction.reg_indep_vars,
                     dependent=Correction.reg_dep_vars,
                 )

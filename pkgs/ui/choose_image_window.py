@@ -1,30 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2021-12-13 21:21:09
+Created on 2021-12-14 14:25:38
 
 @author: Li Zhi
 """
+# TODO：dialog可以封装成类
 import sys
 from os import path
 
 from PyQt5 import QtWidgets
 
 # 非运行入口时需要修改
-from qt_designer_code import Ui_connect_database_window
+from qt_designer_code import Ui_choose_image_window
 
 QApplication = QtWidgets.QApplication
 QDialog = QtWidgets.QDialog
 QMessageBox = QtWidgets.QMessageBox
 QFileDialog = QtWidgets.QFileDialog
 
-Ui_Dialog = Ui_connect_database_window.Ui_Dialog
+Ui_Dialog = Ui_choose_image_window.Ui_Dialog
 
 
-class ConnectDBWindow():
+class ChooseIMGWindow():
 
     def __init__(self):
-        self.db_type = None
-        self.db_path = None
+        self.img_type = None
+        self.img_path = None
         self._init_ui()
         self._init_content()
         self._setup_ui()
@@ -45,12 +46,9 @@ class ConnectDBWindow():
     # 一个window的signal仅能处理本窗口中的事务
     # 如果需要涉及别的窗口，将其信号封装，在ui_integrated中连接
     def _setup_signal(self):
-        # TODO：选择数据库完成时提供一个连接
-        self.connect = {
-            'click_confirm_btn': self.ui_dialog.pushButton.clicked.connect,
-        }
-        self.ui_dialog.pushButton.clicked.connect(self.on_btn_clicked)
-        self.ui_dialog.pushButton_2.clicked.connect(self.on_btn_clicked)
+        self.connect = {}
+        self.ui_dialog.pushButton_3.clicked.connect(self.on_btn_clicked)
+        self.ui_dialog.pushButton_4.clicked.connect(self.on_btn_clicked)
 
     def show(self):  #pylint: disable=C0116
         self.dialog.show()
@@ -58,13 +56,13 @@ class ConnectDBWindow():
     def close(self):  #pylint: disable=C0116
         self.dialog.close()
 
-    def _get_db_type(self):
+    def _get_img_type(self):
         if self.ui_dialog.radioButton.isChecked():
-            self.db_type = '本地'
+            self.img_type = '相机'
         elif self.ui_dialog.radioButton_2.isChecked():
-            self.db_type = '网络'
+            self.img_type = '相册'
         else:
-            self.db_type = None
+            self.img_type = None
 
     def on_btn_clicked(self):
         """
@@ -79,31 +77,30 @@ class ConnectDBWindow():
         sender = self.dialog.sender()
         assert sender.text() in ('确认', '退出')
         if sender.text() == '确认':
-            # TODO：未选择db_type时
-            self._get_db_type()
-            assert self.db_type in('网络', '本地')
+            self._get_img_type()
+            assert self.img_type in('相机', '相册')
             # 打开文件对话框
-            if self.db_type == '本地':
-                db_path, _ = QFileDialog.getOpenFileName(
+            if self.img_type == '相册':
+                img_path, _ = QFileDialog.getOpenFileName(
                     self.dialog, 
-                    '选择要连接的数据库',
+                    '选择要识别的图片',
                     './',
-                    '数据库(*.db);;文本文件(*.txt);;表格(*.xlsx, *.xls)',
+                    '文本文件(*.txt);;图片(*.jpg, *.png)',
                 )
-            if db_path:
-                self.db_path = db_path
+            if img_path:
+                self.img_path = img_path
                 # 显示添加成功，直接关闭本对话框
                 QMessageBox.information(
                     self.dialog,
-                    '连接成功',
-                    f'已成功连接到{self.db_type}数据库\n{path.basename(self.db_path)}',
+                    '选择图片成功',
+                    f'已成功添加{self.img_type}图片\n{path.basename(self.img_path)}',
                     QMessageBox.Ok,
                 )
             else:
                 QMessageBox.warning(
                     self.dialog,
-                    '连接失败',
-                    '未选择数据库',
+                    '选择图片失败',
+                    '未添加图片',
                     QMessageBox.Ok,
                 )
 
@@ -114,6 +111,6 @@ class ConnectDBWindow():
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    connect_db_window = ConnectDBWindow()
-    connect_db_window.show()
+    choose_img_window = ChooseIMGWindow()
+    choose_img_window.show()
     sys.exit(app.exec_())

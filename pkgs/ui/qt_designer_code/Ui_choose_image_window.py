@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'D:\GitHub_Project\ERIC_WORKSPACE\terminal_detect_recognize\connect_database_window.ui'
+# Form implementation generated from reading ui file 'D:\GitHub_Project\ERIC_WORKSPACE\terminal_detect_recognize\choose_image_window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.5
 #
@@ -14,7 +14,6 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_Dialog(object):
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
-        Dialog.setWindowModality(QtCore.Qt.NonModal)
         Dialog.resize(198, 161)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -23,8 +22,6 @@ class Ui_Dialog(object):
         Dialog.setSizePolicy(sizePolicy)
         Dialog.setMinimumSize(QtCore.QSize(198, 161))
         Dialog.setMaximumSize(QtCore.QSize(198, 161))
-        Dialog.setSizeGripEnabled(True)
-        Dialog.setModal(True)
         self.verticalLayout_2 = QtWidgets.QVBoxLayout(Dialog)
         self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.verticalLayout = QtWidgets.QVBoxLayout()
@@ -48,24 +45,24 @@ class Ui_Dialog(object):
         self.horizontalLayout.setContentsMargins(20, 10, 60, 10)
         self.horizontalLayout.setSpacing(60)
         self.horizontalLayout.setObjectName("horizontalLayout")
-        self.pushButton = QtWidgets.QPushButton(Dialog)
+        self.pushButton_3 = QtWidgets.QPushButton(Dialog)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.pushButton.sizePolicy().hasHeightForWidth())
-        self.pushButton.setSizePolicy(sizePolicy)
-        self.pushButton.setMinimumSize(QtCore.QSize(40, 0))
-        self.pushButton.setObjectName("pushButton")
-        self.horizontalLayout.addWidget(self.pushButton)
-        self.pushButton_2 = QtWidgets.QPushButton(Dialog)
+        sizePolicy.setHeightForWidth(self.pushButton_3.sizePolicy().hasHeightForWidth())
+        self.pushButton_3.setSizePolicy(sizePolicy)
+        self.pushButton_3.setMinimumSize(QtCore.QSize(40, 0))
+        self.pushButton_3.setObjectName("pushButton_3")
+        self.horizontalLayout.addWidget(self.pushButton_3)
+        self.pushButton_4 = QtWidgets.QPushButton(Dialog)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.pushButton_2.sizePolicy().hasHeightForWidth())
-        self.pushButton_2.setSizePolicy(sizePolicy)
-        self.pushButton_2.setMinimumSize(QtCore.QSize(40, 0))
-        self.pushButton_2.setObjectName("pushButton_2")
-        self.horizontalLayout.addWidget(self.pushButton_2)
+        sizePolicy.setHeightForWidth(self.pushButton_4.sizePolicy().hasHeightForWidth())
+        self.pushButton_4.setSizePolicy(sizePolicy)
+        self.pushButton_4.setMinimumSize(QtCore.QSize(40, 0))
+        self.pushButton_4.setObjectName("pushButton_4")
+        self.horizontalLayout.addWidget(self.pushButton_4)
         self.horizontalLayout.setStretch(0, 1)
         self.horizontalLayout.setStretch(1, 1)
         self.verticalLayout_2.addLayout(self.horizontalLayout)
@@ -75,15 +72,15 @@ class Ui_Dialog(object):
 
     def retranslateUi(self, Dialog):
         _translate = QtCore.QCoreApplication.translate
-        Dialog.setWindowTitle(_translate("Dialog", "连接数据库"))
-        self.radioButton.setToolTip(_translate("Dialog", "选择本地db文件作为数据库。"))
+        Dialog.setWindowTitle(_translate("Dialog", "选择图片"))
+        self.radioButton.setToolTip(_translate("Dialog", "拍摄一张图片进行识别。"))
         self.radioButton.setStatusTip(_translate("Dialog", "选择本地的db数据库文件。"))
-        self.radioButton.setText(_translate("Dialog", "连接本地数据库"))
-        self.radioButton_2.setToolTip(_translate("Dialog", "扫描二维码连接网络数据库。"))
+        self.radioButton.setText(_translate("Dialog", "相机"))
+        self.radioButton_2.setToolTip(_translate("Dialog", "选择一张本地图片进行识别。"))
         self.radioButton_2.setStatusTip(_translate("Dialog", "扫描二维码连接网络数据库。"))
-        self.radioButton_2.setText(_translate("Dialog", "连接网络数据库"))
-        self.pushButton.setText(_translate("Dialog", "确认"))
-        self.pushButton_2.setText(_translate("Dialog", "退出"))
+        self.radioButton_2.setText(_translate("Dialog", "相册"))
+        self.pushButton_3.setText(_translate("Dialog", "确认"))
+        self.pushButton_4.setText(_translate("Dialog", "退出"))
 
 
 if __name__ == "__main__":
