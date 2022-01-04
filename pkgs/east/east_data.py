@@ -138,8 +138,7 @@ class EastPreprocess(object):
         """
         img_width = min(img.width, max_img_size)
         # if img_width == max_img_size < img.width  起到and作用
-        # TODO：判断似乎多余，如果等于max_img_size，就说明max_img_size <= img.width
-        # 首先确定resize后width，为实际尺寸和最大允许尺寸中较小的
+        # 判断似乎多余，如果等于max_img_size，就说明max_img_size <= img.width
         # 若为最大尺寸，则调整height，但调整后height不一定满足要求，要二次调整
         if img_width == max_img_size:
             ratio = img_width / img.width
@@ -147,6 +146,7 @@ class EastPreprocess(object):
         else:
             img_height = img.height
 
+        # 按宽度比例调整图片后，高度不一定符合要求，第二次调整
         o_height = min(img_height, max_img_size)
         if o_height == max_img_size:
             ratio = o_height / img_height
@@ -157,7 +157,7 @@ class EastPreprocess(object):
 
         return d_width, d_height
 
-    # TODO：默认参数设置cfg
+    # TODO：可以使用更小的图片进行训练，识别文字时按比例放大结果后裁切以加快速度
     @staticmethod
     def preprocess(
         data_dir=cfg.data_dir,
@@ -213,8 +213,8 @@ class EastPreprocess(object):
             print(f'原始图片共{len(origin_img_list)}张。')
 
         train_val_set = []
-        # 训练时固定size img
-        # predict时resize
+        # 训练时固定size img, max_size * max_size
+        # predict时resize, 保持图片原始大小，当原始大小大于max_size时按比例resize
         d_width, d_height = max_train_img_size, max_train_img_size
         for origin_img_name, _ in zip(origin_img_list, tqdm(range(len(origin_img_list)))):  #pylint: disable=E1102
 
@@ -400,6 +400,7 @@ class EastPreprocess(object):
                             groung_truth[i, j, 1] = class_
                             line_width, line_color = 1, 'red'
                             # 如果在首，ith = 0；在尾，ith = 1
+                            # TODO：紧急！检查long edge是否正确和vs对应
                             ith = _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge)
                             vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
                             # 固定long_edge = 0
@@ -434,57 +435,100 @@ class EastPreprocess(object):
             np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), groung_truth)
 
 def _should_merge(region, i, j):
-
+    # region是x方向连接的多个像素，如果region与ij相连，should_merge = True
     neighbor = {(i, j - 1)}
-    # 判断region是否包含有neighbor元素，不包含返回true
+    # 
 
     return not region.isdisjoint(neighbor)
 
-def _region_neighbor(region_set):
-    region_pixels = np.array(list(region_set))
-    j_min = np.amin(region_pixels, axis=0)[1] - 1
-    j_max = np.amax(region_pixels, axis=0)[1] + 1
-    i_m = np.amin(region_pixels, axis=0)[0] + 1
-    region_pixels[:, 0] += 1
-    neighbor = {(region_pixels[n, 0], region_pixels[n, 1]) for n in
-                range(len(region_pixels))}
-    neighbor.add((i_m, j_min))
-    neighbor.add((i_m, j_max))
-    return neighbor
+def _initial_region_group(region_list):
+    # 先对region进行初步分组
+    region_groups = []
+    region_group = []
+    for region in region_list:
+        i_index = region.copy().pop()[0] # copy以避免改变集合中的值，集合可变对象是传地址
+        if not region_group:
+            region_group.append(region)
+            max_i_index = i_index
+            continue
+        if i_index - max_i_index < 2:
+            region_group.append(region)
+        else:
+            region_groups.append(region_group)
+            region_group = [region]
+        max_i_index = i_index
+    region_groups.append(region_group)
+
+    return region_groups
 
 def _region_group(region_list):
-    S = [i for i in range(len(region_list))]
-    D = []
-    while len(S) > 0:
-        m = S.pop(0)
-        if len(S) == 0:
-            # S has only one element, put it to D
-            D.append([m])
-        else:
-            D.append(_rec_region_merge(region_list, m, S))
+    # 1/4优化，先对region_list分组
+    # 每组中region是基于i的邻近region，有可能是连通的（还需要判断j）
+    # 不同组region之间不可能连通,只在每组region中计算连通region    
+    initial_region_group = _initial_region_group(region_list)
+    cnt_region_in_group = [len(_) for _ in initial_region_group]
+    D, S_list, pre_cnt = [], [], 0
+    for cnt in cnt_region_in_group:
+        S_list.append(list(range(pre_cnt, pre_cnt + cnt)))
+        pre_cnt += cnt
+    # S中是region序号
+    for S in S_list:
+        while len(S) > 0:
+            m = S.pop(0)
+            if len(S) == 0:
+                D.append([m])
+            else:
+                D.append(_rec_region_merge(region_list, m, S)) 
+
     return D
 
 def _rec_region_merge(region_list, m, S):
+    # 对于region_m，找到所有和它上下相连的region组tmp
+    # 对于tmp中每个region，递归调用
+    # 最后的rows是多组region，每组中region连通
+    # a不一定与b相连，但可能通过a c d b之类的连通
     rows = [m]
+    # tmp中为与region_m连通的region
     tmp = []
+    # TODO：可能的优化方向:排序。不需要和S中所有n计算，只计算上方一行和下方一行中的n
+    # S中传入的是region序号，不包括region所在行号。可能需要结合region_list计算，或更改输入参数
+    # region_group耗时约20ms，可以暂不优化
     for n in S:
+        # region_n在region_m下方相连或region_m在region_n下方相连
+        # region_list[m]是m集合的地址，对region_list[m]改变会改变region_list中的值
         if (
             not _region_neighbor(region_list[m]).isdisjoint(region_list[n]) or
             not _region_neighbor(region_list[n]).isdisjoint(region_list[m])
         ):
             # 第m与n相交
             tmp.append(n)
+    # 会改变S中内容
     for d in tmp:
         S.remove(d)
     for e in tmp:
         rows.extend(_rec_region_merge(region_list, e, S))
     return rows
 
+def _region_neighbor(region_set):
+    # 相连指的是两个region间至少有一个像素连通
+    # e.g.
+    #     * * r r r * *
+    #     * n n n n n *
+    # 其中*代表一般像素，r代表region中的像素，n代表region的neighbor
+    # 1/4优化，使用list操作代替np 
+    this_region_list = list(region_set)
+    j_list = [ij[1] for ij in this_region_list]
+    j_min, j_max = min(j_list) - 1, max(j_list) + 1
+    i_m = this_region_list[0][0] + 1
+    neighbor = {(i_m, ij[1]) for ij in this_region_list}
+    neighbor.add((i_m, j_min))
+    neighbor.add((i_m, j_max))
+    
+    return neighbor
+
 class EastData(object):
 
     early_stopping_patience = 6
-
-
     @staticmethod
     def sigmoid(x):
         """
@@ -523,9 +567,16 @@ class EastData(object):
         """
         region_list = []
         # 形成多行region_list
+        # TODO：下面的方法依赖np输出activation_pixels顺序，可能需要确认
+        # 1/4优化，np输出activation_pixels按先行后列顺序给出
+        # 即第一行的所有像素，第二行的所有像素；每行像素按列递增给出
+        # x方向相连像素属于一个region，需要merge；
+        # 像素不需要判断不同行的region，假设同一行有多个region，只需要和最后一个region判断
+        # 综上，只需要和region_list中最后一个region判断即可（之前是和所有region）
         for i, j in zip(activation_pixels[0], activation_pixels[1]):
             merge = False
-            for region in region_list:
+            if region_list:
+                region = region_list[-1]
                 if _should_merge(region, i, j):
                     region.add((i, j))
                     merge = True
@@ -536,10 +587,10 @@ class EastData(object):
         D = _region_group(region_list)
         recs_xy_list = np.zeros((len(D), 4, 2))
         score_list = np.zeros((len(D), 4))
-        recs_classes_list = np.zeros(len(D))
+        recs_classes_list = []
         # 对于每个rec
         for group, g_th in zip(D, range(len(D))):
-            total_score = np.zeros((4, 2))
+            total_score = np.zeros((4, 2))  
             classes_score, cnt = 0, 0
             for row in group:
                 for ij in region_list[row]:
@@ -560,11 +611,9 @@ class EastData(object):
                             p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 4:8], (2, 2))
                             # 第g_th个rec的首或尾加上该像素得分*该像素判断首尾坐标
                             recs_xy_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
-            row = group[-1]
-            ij = list(region_list[row])[-1]
             classes_score /= cnt
             # TODO：设为函数参数，是否考虑加一类不确定
-            recs_classes_list[g_th] = '编号' if classes_score < 0.5 else '铭牌'
+            recs_classes_list.append('编号' if classes_score < 0.5 else '铭牌')
             score_list[g_th] = total_score[:, 0]
             # recs_xy_list = (第i个像素score * 第i个像素p_v) / total_score
             recs_xy_list[g_th] = recs_xy_list[g_th] * pixel_size / (total_score + cfg.epsilon)
