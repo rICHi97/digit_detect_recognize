@@ -132,7 +132,7 @@ class ImageProcess(object):
         拼接多个rec为一张或多张图片
         Parameters
         ----------
-        TODO：自动去除拓展名
+        img：PIL.Image或img_path
         img_name：不含拓展名的图片名
         max_joint_img_width：单张joint_img的最大宽度，超出则新建另一张
         joint_img_height：joint_img的高度

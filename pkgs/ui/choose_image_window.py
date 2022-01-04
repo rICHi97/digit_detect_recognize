@@ -11,23 +11,25 @@ from os import path
 from PyQt5 import QtWidgets
 
 # 非运行入口时需要修改
-from qt_designer_code import Ui_choose_image_window
+from .qt_designer_code import Ui_choose_image_window
+from . import reimplement
 
 QApplication = QtWidgets.QApplication
-QDialog = QtWidgets.QDialog
 QMessageBox = QtWidgets.QMessageBox
 QFileDialog = QtWidgets.QFileDialog
 
 Ui_Dialog = Ui_choose_image_window.Ui_Dialog
-
+UserDialog = reimplement.UserDialog
 
 class ChooseIMGWindow():
-
-    def __init__(self):
+    """
+    选择图片
+    """
+    def __init__(self, parent=None):
         self.img_type = None
         self.img_path = None
         self._init_ui()
-        self._init_content()
+        self._init_content(parent)
         self._setup_ui()
         self._setup_signal()
 
@@ -36,8 +38,8 @@ class ChooseIMGWindow():
         self.ui_dialog = Ui_Dialog()
 
     # 实体
-    def _init_content(self):
-        self.dialog = QDialog()
+    def _init_content(self, parent):
+        self.dialog = UserDialog(parent)
 
     # 给ui框架填充实体
     def _setup_ui(self):
@@ -46,7 +48,9 @@ class ChooseIMGWindow():
     # 一个window的signal仅能处理本窗口中的事务
     # 如果需要涉及别的窗口，将其信号封装，在ui_integrated中连接
     def _setup_signal(self):
-        self.connect = {}
+        self.connect = {
+            'finish_choose_img': self.dialog.close_signal.connect,
+        }
         self.ui_dialog.pushButton_3.clicked.connect(self.on_btn_clicked)
         self.ui_dialog.pushButton_4.clicked.connect(self.on_btn_clicked)
 
@@ -79,13 +83,14 @@ class ChooseIMGWindow():
         if sender.text() == '确认':
             self._get_img_type()
             assert self.img_type in('相机', '相册')
-            # 打开文件对话框
+            # 打开文件对话框\
+            # TODO：(*.jpg, *.png)只显示png图片，不显示jpg
             if self.img_type == '相册':
                 img_path, _ = QFileDialog.getOpenFileName(
                     self.dialog, 
                     '选择要识别的图片',
                     './',
-                    '文本文件(*.txt);;图片(*.jpg, *.png)',
+                    '图片(*.jpg *.png);;文本文件(*.txt)',
                 )
             if img_path:
                 self.img_path = img_path
@@ -107,7 +112,8 @@ class ChooseIMGWindow():
         elif sender.text() == '退出':
             self.ui_dialog.radioButton.setChecked(False)
             self.ui_dialog.radioButton_2.setChecked(False)
-            self.close()
+
+        self.close()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

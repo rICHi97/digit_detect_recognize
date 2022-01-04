@@ -10,11 +10,13 @@ import os.path as path
 from PIL import Image
 
 from . import cfg, image_processing, visualization
+from .. import detect_recognize
 from ..recdata import recdata_correcting, recdata_io, recdata_processing
 
 PCA = recdata_correcting.PCA
 ImageProcess = image_processing.ImageProcess
 ImageDraw = visualization.ImageDraw
+EndToEnd = detect_recognize.EndToEnd
 RecdataProcess = recdata_processing.RecdataProcess
 RecdataIO = recdata_io.RecdataIO
 RecdataRecognize = recdata_processing.RecdataRecognize
@@ -44,15 +46,15 @@ class CodeTest(object):
 
     # TODO：测试对整个文件夹进行操作，目前仅支持操作单张img及recs_xy_list
     # TODO：参数的命名可能要考虑
-    @staticmethod
-    def test_joint_rec(
-            img_path_or_dir=cfg.test_joint_rec_img_path,
-            recs_xy_list_or_dir=cfg.test_joint_rec_txt_path,
-    ):
-        img = _get_img(img_path_or_dir)
-        img_name = path.basename(img_path_or_dir)[:-4]
-        recs_xy_list = _get_recs_xy_list(recs_xy_list_or_dir)
-        ImageProcess.joint_rec(img, img_name, recs_xy_list)
+    # @staticmethod
+    # def test_joint_rec(
+    #         img_path_or_dir=cfg.test_joint_rec_img_path,
+    #         recs_xy_list_or_dir=cfg.test_joint_rec_txt_path,
+    # ):
+    #     img = _get_img(img_path_or_dir)
+    #     img_name = path.basename(img_path_or_dir)[:-4]
+    #     recs_xy_list = _get_recs_xy_list(recs_xy_list_or_dir)
+    #     ImageProcess.joint_rec(img, img_name, recs_xy_list)
 
     @staticmethod
     def test_pca_divide_groups(
@@ -61,8 +63,7 @@ class CodeTest(object):
         """
         测试对于不同类别的，打乱顺序的（重点）能否分开
         Parameters
-        ----------
-        
+        ----------      
         Returns
         ----------
         """
@@ -73,8 +74,7 @@ class CodeTest(object):
         pca_values = PCA.get_pca_values(reorder_recs_xy_list)
         divide_groups = PCA.divide_recs(pca_values)
 
-        return reorder_recs_xy_list
-        
+        return reorder_recs_xy_list      
 
     @staticmethod
     def test_recognize(
@@ -98,6 +98,19 @@ class CodeTest(object):
 
         return recdata
 
+    @staticmethod
+    def test_end_to_end(
+        img_path=cfg.test_end_to_end_img_path,
+    ):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        end_to_end = EndToEnd()
+        end_to_end.detect_recognize(img_path)
 
 class ParamOptimize():
     """

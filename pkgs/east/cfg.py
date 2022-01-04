@@ -16,11 +16,12 @@ train_label_dir = 'b_train_label'
 preprocess_img_dir = 'c_preprocess_img'
 label_img_dir = 'c_label_img'
 
-save_weights_dir = './source/east_model/'
-east_weights_filepath = './source/east_model/029-0.132.h5'
+save_weights_filepath = f'./source/east_model/{train_task_id}.h5'
+east_weights_filepath = './source/east_model/030-0.132.h5'
 # east_weights_filepath = './source/east_model/weights_3T832.020-0.113.h5'
 img_dir = './source/test_data/image/'
 predict_img_dir = None
+output_txt = True
 output_txt_dir = './source/test_data/image_txt'
 
 val_ratio = 0.2
@@ -54,9 +55,9 @@ num_img = 1
 feature_layers_range = range(5, 1, -1)
 feature_layers_num = len(feature_layers_range)
 pixel_size = 2 ** feature_layers_range[-1]  # pixel_size = 4
-pixel_threshold = 0.7 # 原始为0.9，越大越严格
-side_vertex_pixel_threshold = 0.6  # 原始为0.8，越大越严格，判断是否为内部像素
-trunc_threshold = 0.1 # 原始为0.2，越小越严格，判断头尾像素
+pixel_threshold = 0.9 # 原始为0.9，越大越严格
+side_vertex_pixel_threshold = 0.8  # 原始为0.8，越大越严格，判断是否为内部像素
+trunc_threshold = 0.2 # 原始为0.2，越小越严格，判断头尾像素
 
 # 控制三个loss的系数
 lambda_class_score_loss = 4.0
@@ -64,6 +65,7 @@ lambda_inside_score_loss = 4.0
 lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0
 
+callbacks = ['early_stopping', 'check_point', 'reduce_lr']
 early_stopping_patience = 8
 early_stopping_verbose = True
 check_point_filepath = './source/east_model/{epoch:03d}-{val_loss:.3f}.h5'

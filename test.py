@@ -7,13 +7,12 @@ Created on Thu Sep 30 22:24:20 2021
 import time
 
 from pkgs.tool import code_testing
+CodeTest = code_testing.CodeTest
 
 start = time.process_time()
 
-CodeTest = code_testing.CodeTest
-rec_data = CodeTest.test_recognize()
+CodeTest.test_end_to_end()
 
 end = time.process_time()
 print(end - start)
-
-
+    

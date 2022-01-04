@@ -11,6 +11,7 @@ test_joint_rec_img_path = './source/test_data/image/1.jpg'
 test_joint_rec_txt_path = './source/test_data/image_txt/1.txt'
 test_recognize_img_path = './source/test_data/image/terminal_5_number_1.jpg'
 test_recognize_recs_txt_path = './source/test_data/label_txt/terminal_5_number_1.txt'
+test_end_to_end_img_path = './source/test_data/image/terminal_7.png'
 
 # image_processing
 coef_x_len, coef_y_len = 0.23, 0.02

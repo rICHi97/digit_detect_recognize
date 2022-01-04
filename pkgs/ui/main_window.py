@@ -15,7 +15,7 @@ import sys
 
 from PyQt5 import QtWidgets, QtGui
 
-from qt_designer_code import Ui_main_window
+from .qt_designer_code import Ui_main_window
 
 QApplication = QtWidgets.QApplication
 QMainWindow = QtWidgets.QMainWindow
@@ -51,9 +51,9 @@ class MainWindow():
     # MainWindow().connect['clicked_connect_db'](callable_object)
     def _setup_signal(self):
         self.connect = {
-            'click_connect_db': self.ui_main_window.pushButton.clicked.connect,
-            'click_choose_img': self.ui_main_window.pushButton_2.clicked.connect,
-            'click_start_recognize': self.ui_main_window.pushButton_3.clicked.connect,
+            'clicked_connect_db': self.ui_main_window.pushButton.clicked.connect,
+            'clicked_choose_img': self.ui_main_window.pushButton_2.clicked.connect,
+            'clicked_start_recognize': self.ui_main_window.pushButton_3.clicked.connect,
         }
 
     def show(self):  #pylint: disable=C0116
@@ -74,7 +74,9 @@ class MainWindow():
         Returns
         ----------
         """
+        # TODO：设置铺满
         self.ui_main_window.label_4.setPixmap(QPixmap(img_path))
+        self.ui_main_window.label_4.setScaledContents(True)
 
     def set_db_status(self, status, text):
         """
@@ -89,7 +91,7 @@ class MainWindow():
             self.ui_main_window.label_2.setPixmap(QPixmap(":/mainwindow/img/db_connected"))
         else:
             self.ui_main_window.label_2.setPixmap(QPixmap(":/mainwindow/img/db_disconnected"))
-        self.ui_main_window.label_2.setText(text)
+        self.ui_main_window.label.setText(text)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -87,6 +87,7 @@ class Rec(object):
             elif key == 'joint_x_position':
                 self.joint_x_position = value
 
+
 class Recdata(object):
     """
     从rec四点坐标得到rec data，如边长度、中心坐标
@@ -523,9 +524,9 @@ class RecdataProcess(object):
         for i in range(3, 0, -1):
             xy_list[i] = xy_list[i - 1]
         xy_list[0, 0], xy_list[0, 1] = tmp_x, tmp_y
-        reorder_rec_xy_list = np.reshape(xy_list, (1, 8))[0]
+        reorder_xy_list = np.reshape(xy_list, (4, 2))
 
-        return reorder_rec_xy_list
+        return reorder_xy_list
 
     @staticmethod
     def reorder_recs(recs_xy_list, order='ascending'):
@@ -726,24 +727,31 @@ class RecdataRecognize(object):
         """
         Parameters
         ----------
+        img：PIL.Image或img_path
+        recs_xy_list：多个rec的四点坐标
+        recs_classes_list：多个rec的类别信息
+        joint_img_dir：输出joint_img文件夹，需要结合img_name遍历文件识别
 
         Returns
         ----------
+        recognize_recs_list：识别成功的Rec list
         """
         from . import recdata_correcting  #pylint: disable=C0415
         from ..tool import image_processing  #pylint: disable=C0415
         ImageProcess = image_processing.ImageProcess
         Correction = recdata_correcting.Correction
 
-        recognize_data = []
+        recognize_recs_list = []
         # 排序所有rec，按y从小到大顺序，对两列同样有效
         recs_list = RecdataProcess.reorder_recs(
             [Rec(xy_list, classes) for xy_list, classes in zip(recs_xy_list, recs_classes_list)]
         )
         recs_classes_set = set(recs_classes_list)
+
         joint_data = {}
+        # 拼接编号rec图片
         for classes in recs_classes_set:
-            assert classes in ('编号', '铭牌'), f'{classes}不合规'
+            assert classes in ('编号', '铭牌'), f'classes不能为{classes}'
             recs_same_classes = [rec for rec in recs_list if rec.classes == classes]
             # TODO：英文classes
             classes = 'number' if classes == '编号' else 'plate'
@@ -791,9 +799,9 @@ class RecdataRecognize(object):
                             j = file_joint_data.index(rec)
                             rec = file_joint_data.pop(j)
                             rec.text = chars[i]
-                            recognize_data.append(rec)
+                            recognize_recs_list.append(rec)
                             break
-                        # locations是递增的，当前l已经大于location了，之后的没必要比较
+                        # locations递增，当前l已经大于location，之后无需比较
                         if location < l:
                             break
                     # rec在joint中已包含xy_list信息
@@ -802,6 +810,6 @@ class RecdataRecognize(object):
                 # TODO：是否会识别到多个word_result
                 rec, word_result = file_joint_data[0], words_result[0]
                 rec.text = word_result['words']
-                recognize_data.append(rec)
+                recognize_recs_list.append(rec)
 
-        return recognize_data
+        return recognize_recs_list

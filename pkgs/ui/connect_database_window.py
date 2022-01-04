@@ -10,23 +10,23 @@ from os import path
 from PyQt5 import QtWidgets
 
 # 非运行入口时需要修改
-from qt_designer_code import Ui_connect_database_window
+from .qt_designer_code import Ui_connect_database_window
+from . import reimplement
 
 QApplication = QtWidgets.QApplication
-QDialog = QtWidgets.QDialog
 QMessageBox = QtWidgets.QMessageBox
 QFileDialog = QtWidgets.QFileDialog
 
 Ui_Dialog = Ui_connect_database_window.Ui_Dialog
-
+UserDialog = reimplement.UserDialog
 
 class ConnectDBWindow():
 
-    def __init__(self):
+    def __init__(self, parent=None):
         self.db_type = None
         self.db_path = None
         self._init_ui()
-        self._init_content()
+        self._init_content(parent)
         self._setup_ui()
         self._setup_signal()
 
@@ -35,8 +35,8 @@ class ConnectDBWindow():
         self.ui_dialog = Ui_Dialog()
 
     # 实体
-    def _init_content(self):
-        self.dialog = QDialog()
+    def _init_content(self, parent):
+        self.dialog = UserDialog(parent)
 
     # 给ui框架填充实体
     def _setup_ui(self):
@@ -47,7 +47,8 @@ class ConnectDBWindow():
     def _setup_signal(self):
         # TODO：选择数据库完成时提供一个连接
         self.connect = {
-            'click_confirm_btn': self.ui_dialog.pushButton.clicked.connect,
+            'connected_db': self.ui_dialog.pushButton.clicked.connect,
+            'finish_connect_db': self.dialog.close_signal.connect,
         }
         self.ui_dialog.pushButton.clicked.connect(self.on_btn_clicked)
         self.ui_dialog.pushButton_2.clicked.connect(self.on_btn_clicked)
@@ -81,11 +82,11 @@ class ConnectDBWindow():
         if sender.text() == '确认':
             # TODO：未选择db_type时
             self._get_db_type()
-            assert self.db_type in('网络', '本地')
+            assert self.db_type in('网络', '本地'), f'db_type错误，不能为{db_type}'
             # 打开文件对话框
             if self.db_type == '本地':
                 db_path, _ = QFileDialog.getOpenFileName(
-                    self.dialog, 
+                    self.dialog,
                     '选择要连接的数据库',
                     './',
                     '数据库(*.db);;文本文件(*.txt);;表格(*.xlsx, *.xls)',
@@ -106,11 +107,11 @@ class ConnectDBWindow():
                     '未选择数据库',
                     QMessageBox.Ok,
                 )
-
         elif sender.text() == '退出':
             self.ui_dialog.radioButton.setChecked(False)
             self.ui_dialog.radioButton_2.setChecked(False)
-            self.close()
+
+        self.close()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

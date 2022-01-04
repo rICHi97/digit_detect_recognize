@@ -14,11 +14,10 @@ from os import path
 from keras import  applications, layers, optimizers, preprocessing, Input, Model
 import numpy as np
 from PIL import Image
-from tensorflow.compat import v1
+from tensorflow.compat import v1  #pylint: disable=E0401
 
 from . import cfg
 from . import east_data
-from ..recdata import recdata_io
 
 VGG16 = applications.vgg16.VGG16
 preprocess_input = applications.vgg16.preprocess_input
@@ -35,7 +34,6 @@ ConfigProto = v1.ConfigProto
 
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
-RecdataIO = recdata_io.RecdataIO
 
 
 def _init_environ():
@@ -131,7 +129,7 @@ class EastNet(object):
         # Layers()
         # 增加class_score用于区分是端子铭牌还是端子编号
         inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
-        classes_score = Conv2D(1, 1, padding='same', neme='class_score')(before_output)        
+        classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)        
         side_v_code = Conv2D(2, 1, padding='same', name='side_vertex_code')(before_output)
         side_v_coord = Conv2D(4, 1, padding='same', name='side_vertex_coord')(before_output)
         east_detect = (
@@ -151,10 +149,10 @@ class EastNet(object):
         steps_per_epoch=cfg.steps_per_epoch,
         epoch_num=cfg.epoch_num,
         verbose=cfg.train_verbose,
-        callbacks=None,
+        callbacks=cfg.callbacks,
         val_generator=EastData.generator,
         val_steps=cfg.val_steps,
-        save_weights_dir=cfg.save_weights_dir,
+        save_weights_filepath=cfg.save_weights_filepath,
     ):
         """
         Parameters
@@ -163,10 +161,9 @@ class EastNet(object):
         Returns
         ----------
         """
-        print(steps_per_epoch)
-        print(val_steps)
         if summary:
             self.east_model.summary()
+        callbacks = [EastData.callbacks(type_) for type_ in callbacks]
         # TODO：研究Adam优化器
         self.east_model.compile(
             loss=EastData.rec_loss,
@@ -182,15 +179,17 @@ class EastNet(object):
             validation_data=val_generator(is_val=True),
             validation_steps=val_steps,
         )
-        self.east_model.save_weights(save_weights_dir)
+        self.east_model.save_weights(save_weights_filepath)
 
     # TODO：对于尺寸较大的图片，先裁切再predict
-    # TODO：支持对单张图片predict
     # TODO：terminal_23识别有问题
+    # TODO：num_img封装图片为batch检测，研究keras文档api调用说明
+        # TODO：支持output txt
     def predict(
         self,
         east_weights_filepath=cfg.east_weights_filepath,
-        img_dir=cfg.img_dir,
+        img_dir_or_path=cfg.img_dir,
+        output_txt=cfg.output_txt,
         output_txt_dir=cfg.output_txt_dir,
         max_predict_img_size=cfg.max_predict_img_size,
         show_predict_img=cfg.show_predict_img,
@@ -202,53 +201,61 @@ class EastNet(object):
         检测图片中端子及铭牌
         Parameters
         ----------
+        img_dir_or_path：待识别img的dir，或单张img路径
+        output_txt_dir：存放输出txt文件夹
+        num_img：暂为1，符合keras api调用接口
+        pixel_threshold：需要nms的像素阈值，越低越慢
 
         Returns
         ----------
-
+        imgs_recs_xy_list：所有图片的多个rec的四点坐标
+        imgs_recs_classes_list：所有图片的rec类别信息
         """
         self.east_model.load_weights(east_weights_filepath)
 
-        img_files = os.listdir(img_dir)
-        img_paths = [path.join(img_dir, img_file) for img_file in img_files]
+        if path.isdir(img_dir_or_path):
+            img_files = os.listdir(img_dir_or_path)
+            img_paths = [path.join(img_dir_or_path, img_file) for img_file in img_files]
+        else:
+            img_paths = [img_dir_or_path]
+        imgs_recs_xy_list, imgs_recs_classes_list = [], []
+
         for img_path in img_paths:
 
             img = preprocessing.image.load_img(img_path).convert('RGB')
             d_width, d_height = EastPreprocess.resize_img(img, max_predict_img_size)
             scale_ratio_w, scale_ratio_h = img.width / d_width, img.height / d_height
             img = img.resize((d_width, d_height), Image.BICUBIC)
-
             array_img = preprocessing.image.img_to_array(img)
-            # 封装多张图片，但在此只封装一张
-            array_img_all = np.zeros((num_img, d_height, d_width, 3))
+            array_img_all = np.zeros((num_img, d_height, d_width, 3))  # 封装多张图片，但在此只封装一张
             array_img_all[0] = array_img
-
             tf_img = preprocess_input(array_img, mode='tf')
             x = np.zeros((num_img, d_height, d_width, 3))
             x[0] = tf_img
+            # TODO：明确输出y的shape
             y_pred = self.east_model.predict(x)
+            y = y_pred[0]  # size * 8
+            y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
+            condition = np.greater_equal(y[:, :, 0], pixel_threshold)
+            activation_pixels = np.asarray(condition).nonzero()
+            # 12/4：nms中已经修改，以适应predict tensor shape
+            recs_score, recs_after_nms, recs_classes_list = EastData.nms(
+                y, activation_pixels, return_classes=True
+            )
 
-            for i in range(num_img):
+            recs_xy_list = []
+            for score, rec in zip(recs_score, recs_after_nms):
+                if np.amin(score) > 0:
+                    rec = np.reshape(rec, (4, 2))
+                    rec[:, 0] *= scale_ratio_w
+                    rec[:, 1] *= scale_ratio_h
+                    rec = np.reshape(rec, (8,)).tolist()
+                    recs_xy_list.append(rec)
 
-                recs_xy_list = []
-                y = y_pred[i]
-                y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
-                condition = np.greater_equal(y[:, :, 0], pixel_threshold)
-                activation_pixels = np.where(condition)
-                # 12/4：nms中已经修改，以适应predict tensor shape
-                recs_score, recs_after_nms, recs_classes_list = EastData.nms(
-                    y, activation_pixels, return_classes=True
-                )
-
-                for score, rec in zip(recs_score, recs_after_nms):
-                    if np.amin(score) > 0:
-                        rec = np.reshape(rec, (4, 2))
-                        rec[:, 0] *= scale_ratio_w
-                        rec[:, 1] *= scale_ratio_h
-                        rec = np.reshape(rec, (8,)).tolist()
-                        recs_xy_list.append(rec)
+            imgs_recs_xy_list.append(recs_xy_list)
+            imgs_recs_classes_list.append(recs_classes_list)
                         
-        return recs_xy_list, recs_classes_list
+        return imgs_recs_xy_list, imgs_recs_classes_list
 
 
 
