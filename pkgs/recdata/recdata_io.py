@@ -14,6 +14,8 @@ import json
 import os
 import os.path as path
 
+import numpy as np
+
 
 class RecdataIO(object):
     """
@@ -33,7 +35,7 @@ class RecdataIO(object):
         ----------
         """
         recs_xy_list = []
-        classes_list = []
+        recs_classes_list = []
         with open(txt_path, 'r', encoding='utf8') as rec_txt:
             lines = rec_txt.readlines()
             for line in lines:
@@ -41,14 +43,14 @@ class RecdataIO(object):
                 # len = 8，是recs_xy_list txt；
                 # len = 9，是label txt
                 if len(line) == 9:
-                    classes = '编号' if line[-1] == 'number' else '铭牌'                    
+                    classes = '编号' if line[-1] == 'number' else '铭牌'
                     line = line[:-1]
+                    recs_classes_list.append(classes)
                 xy_list = [float(xy) for xy in line]
                 recs_xy_list.append(xy_list)
-                classes_list.append(classes)
-                
+
         if return_classes_list:
-            return recs_xy_list, classes_list
+            return recs_xy_list, recs_classes_list
         return recs_xy_list
 
     @staticmethod
@@ -80,19 +82,56 @@ class RecdataIO(object):
         return imgs_rec_dict
 
     @staticmethod
-    def read_gt_file(gt_filepath):
+    def read_rec_npy(npy_path):
+        """
+        输出结果基于resize后img
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        npy = np.load(npy_path)
+        recs_xy_list = npy[:, 0:8].tolist()
+        recs_classes_list = npy[:, -1].tolist()
+        recs_classes_list = ['编号' if classes < 0.5 else '铭牌' for classes in recs_classes_list]
+
+        return recs_xy_list, recs_classes_list
+
+    @staticmethod
+    def read_gt(gt_path):
         """
         读取一个_gt.npy文件，返回recs_list和class信息
         Parameters
         ----------
-        gt_filepath：gt文件路径
+        gt_path：gt文件路径
 
         Returns
         ----------
+        xy_list和classes_list通gt文件获取，基于resize后img
         recs_xy_list：多个rec的四点坐标
-        recs_classes：多个rec的类别信息
+        recs_classes_list：多个rec的类别信息
         """
-        pass
+        from ..east import east_data  #pylint: disable=C0415
+
+        EastData = east_data.EastData
+
+        predicts = np.load(gt_path)
+        # gt，无需sigmoid
+        activation_pixels = np.where(np.greater_equal(predicts[:, :, 0], 1))
+        recs_score, recs_after_nms, classes_list = EastData.nms(
+            predicts, activation_pixels, return_classes=True
+        )
+
+        recs_xy_list, recs_classes_list = [], []
+        for score, xy_list, classes in zip(recs_score, recs_after_nms, classes_list):
+            if np.amin(score) > 0:
+                # TODO：classes分数设为参数，通过gt得到，应该仅为0或1
+                xy_list = np.reshape(xy_list, (8,)).tolist()
+                recs_xy_list.append(xy_list)
+                recs_classes_list.append(classes)
+
+        return recs_xy_list, recs_classes_list
 
     @staticmethod
     def write_rec_txt(recs_xy_list, txt_dir, txt_name):

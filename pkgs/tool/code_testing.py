@@ -11,12 +11,14 @@ from PIL import Image
 
 from . import cfg, image_processing, visualization
 from .. import detect_recognize
+from ..east import east_data
 from ..recdata import recdata_correcting, recdata_io, recdata_processing
 
 PCA = recdata_correcting.PCA
 ImageProcess = image_processing.ImageProcess
-ImageDraw = visualization.ImageDraw
+RecDraw = visualization.RecDraw
 EndToEnd = detect_recognize.EndToEnd
+EastPreprocess = east_data.EastPreprocess
 RecdataProcess = recdata_processing.RecdataProcess
 RecdataIO = recdata_io.RecdataIO
 RecdataRecognize = recdata_processing.RecdataRecognize
@@ -55,6 +57,13 @@ class CodeTest(object):
     #     img_name = path.basename(img_path_or_dir)[:-4]
     #     recs_xy_list = _get_recs_xy_list(recs_xy_list_or_dir)
     #     ImageProcess.joint_rec(img, img_name, recs_xy_list)
+    @staticmethod
+    def test_preprocess():
+        EastPreprocess.preprocess()
+
+    @staticmethod
+    def test_label():
+        EastPreprocess.label()
 
     @staticmethod
     def test_pca_divide_groups(
@@ -97,6 +106,39 @@ class CodeTest(object):
         recdata = RecdataRecognize.recognize(img, img_name, recs_xy_list, recs_classes_list)
 
         return recdata
+
+    @staticmethod
+    def test_draw_label_txt(
+        img_path=cfg.test_draw_label_txt_img_path,
+        label_txt_path=cfg.test_draw_label_txt_label_txt_path,
+    ):
+        """
+        label_txt基于原始大小图片
+        Parameters
+        ----------
+
+        Returns
+        ----------
+        """
+        img = Image.open(img_path)
+        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(label_txt_path, True)
+        for xy_list, classes in zip(recs_xy_list, recs_classes_list):
+            RecDraw.draw_rec(xy_list, img)
+            RecDraw.draw_text(classes, xy_list, img)
+
+    @staticmethod
+    def test_draw_gt(
+        gt_path=cfg.test_draw_gt_gt_path,
+        img_path=cfg.test_draw_gt_img_path,
+        resized=cfg.test_draw_gt_resized,
+    ):
+        """
+        Parameters
+        ----------
+        Returns
+        ----------
+        """
+        RecDraw.draw_gt(gt_path, img_path, resized)
 
     @staticmethod
     def test_end_to_end(
@@ -160,7 +202,7 @@ class ParamOptimize():
 #             img_name = file.replace('.txt', '.png')
 #             img_path = path.join(img_dir, img_name)
 #         img = Image.open(img_path)
-#         visualization.ImageDraw.draw_recs_by_txt(label_path, img, 2, 'black', True)
+#         visualization.RecDraw.draw_recs_by_txt(label_path, img, 2, 'black', True)
 #         img.save(path.join(label_dir, img_name))
 
 # # TODO：检查铭牌标签是否出错
@@ -187,23 +229,23 @@ class ParamOptimize():
 #         original_recs_shape_data.append(rec_shape_data)
 #     img = Image.open(img_name).copy()
 #     corrected_recs_shape_data = recdata_correcting.Correction.correct_rec(recs_xy_list)
-#     # visualization.ImageDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
-#     # visualization.ImageDraw.draw_recs(original_recs_shape_data, img, 2, 'black', True)
-#     visualization.ImageDraw.draw_recs(corrected_recs_shape_data, img, 2, 'black', True)
+#     # visualization.RecDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+#     # visualization.RecDraw.draw_recs(original_recs_shape_data, img, 2, 'black', True)
+#     visualization.RecDraw.draw_recs(corrected_recs_shape_data, img, 2, 'black', True)
 #     img.save(img_test_name)
 
 # # 矫正多张图片
 # if test_correct_all_imgs:
-#     imgs_rec_dict = recdata_io.RecdataIO.read_rec_txt_dir('./source/test_data/image_txt')
+#     imgs_rec_dict = recdata_io.RecdataIO.read_rec_txt_dir('./resource/test_data/image_txt')
 #     i = 0
 #     imgs_xy_list = {}
 #     for key, recs_xy_list in imgs_rec_dict.items():
 #         img_name = key[:-4]
 #         try:
-#             img = Image.open('./source/test_data/image/' + img_name + '.jpg')
+#             img = Image.open('./resource/test_data/image/' + img_name + '.jpg')
 #         except FileNotFoundError:
-#             img = Image.open('./source/test_data/image/' + img_name + '.png')
-#         ImageDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+#             img = Image.open('./resource/test_data/image/' + img_name + '.png')
+#         RecDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
 #         # if len(recs_xy_list) < 3:
 #         #     i += 1
 #         # else:
@@ -211,28 +253,28 @@ class ParamOptimize():
 #         #     _ = []
 #         #     for rec_shape_data in corrected_recs_shape_data:
 #         #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
-#         #         visualization.ImageDraw.draw_rec(
+#         #         visualization.RecDraw.draw_rec(
 #         #             xy_list, img, width=2, color='black', distinguish_first_side=True
                     
 #         #         )
 #         #         _.append(xy_list)
 #         #     imgs_rec_dict[key] = _
-#         img.save('./source/test_data/' + img_name + '.jpg')
+#         img.save('./resource/test_data/' + img_name + '.jpg')
 
 # if test_east_predict:
 
 #     east = EastNet()
 #     east.predict()
-#     imgs_rec_dict = RecdataIO.read_rec_txt_dir('./source/test_data/image_txt')
+#     imgs_rec_dict = RecdataIO.read_rec_txt_dir('./resource/test_data/image_txt')
 #     i = 0
 #     imgs_xy_list = {}
 #     for key, recs_xy_list in imgs_rec_dict.items():
 #         img_name = key[:-4]
 #         try:
-#             img = Image.open('./source/test_data/image/' + img_name + '.jpg')
+#             img = Image.open('./resource/test_data/image/' + img_name + '.jpg')
 #         except FileNotFoundError:
-#             img = Image.open('./source/test_data/image/' + img_name + '.png')
-#         ImageDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
+#             img = Image.open('./resource/test_data/image/' + img_name + '.png')
+#         RecDraw.draw_recs(recs_xy_list, img, 2, 'black', True)
 #         # if len(recs_xy_list) < 3:
 #         #     i += 1
 #         # else:
@@ -240,16 +282,16 @@ class ParamOptimize():
 #         #     _ = []
 #         #     for rec_shape_data in corrected_recs_shape_data:
 #         #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
-#         #         visualization.ImageDraw.draw_rec(
+#         #         visualization.RecDraw.draw_rec(
 #         #             xy_list, img, width=2, color='black', distinguish_first_side=True
                     
 #         #         )
 #         #         _.append(xy_list)
 #         #     imgs_rec_dict[key] = _
-#         img.save('./source/test_data/' + img_name + '.jpg')
+#         img.save('./resource/test_data/' + img_name + '.jpg')
 
 # if test_show_gt:
     
-#     gt_filepath = './source/train_data/b_train_label/terminal_5_number_1_gt.npy'
-#     img_filepath = './source/train_data/a_img/terminal_5_number_1.jpg'
-#     ImageDraw.draw_gt_file(gt_filepath, img_filepath)
+#     gt_filepath = './resource/train_data/b_train_label/terminal_5_number_1_gt.npy'
+#     img_filepath = './resource/train_data/a_img/terminal_5_number_1.jpg'
+#     RecDraw.draw_gt_file(gt_filepath, img_filepath)

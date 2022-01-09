@@ -14,6 +14,7 @@ QApplication = QtWidgets.QApplication
 
 MainApp = main_app.MainApp
 
+# TODO：terminal_34识别有问题
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     main_app = MainApp()

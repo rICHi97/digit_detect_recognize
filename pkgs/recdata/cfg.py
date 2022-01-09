@@ -9,4 +9,4 @@ x_coef = 0.5
 y_coef = 0.5
 W_coef = 0.125
 H_coef = 0.25
-joint_img_dir = './source/joint_img/'
+joint_img_dir = './resource/joint_img/'

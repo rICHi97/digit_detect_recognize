@@ -16,6 +16,7 @@ import random
 from keras import applications, callbacks, preprocessing
 import numpy as np
 from PIL import Image, ImageDraw
+from shapely import geometry
 import tqdm
 from tensorflow.compat import v1
 
@@ -28,6 +29,8 @@ LearningRateScheduler = callbacks.LearningRateScheduler
 ModelCheckpoint = callbacks.ModelCheckpoint
 ReduceLROnPlateau = callbacks.ReduceLROnPlateau
 TensorBoard = callbacks.TensorBoard
+Polygon = geometry.Polygon
+point = geometry.Point
 tqdm = tqdm.tqdm
 cast = v1.cast
 equal = v1.equal
@@ -88,21 +91,31 @@ def _is_point_inside_shrink(px, py, shrink_xy_list, p_min, p_max):
 def _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge):
     """
     判断在头部还是在尾部。
-    通过两次收缩得到内部像素，shrink_1是收缩一次结果
+    通过两次收缩得到内部像素，xy_list是原始坐标，shrink_1是收缩一次结果
     Parameters
     ----------
     
     Returns
     ----------
+    nth：0，首部；1，尾部
     """
     nth = -1
     # 点索引
     # TODO：更易读的写法
-    vs = [[[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]],
-         [[0, 0, 1, 1, 0], [2, 2, 3, 3, 2]]]
+    # vs = [
+    #     [[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]],
+    #     [[0, 0, 1, 1, 0], [2, 2, 3, 3, 2]]
+    # ]
 
     # 强制long_edge = 0
-    # vs = [[[1, 1, 2, 2, 1], [3, 3, 0, 0, 3]]]
+    # vs[long_edge] = [[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]]
+    # ith = 0, [0, 0, 3, 3, 0]
+    # ith = 1, [1, 1, 2, 2, 1]
+
+    # TODO：补充long_edge = 1情况
+    vs = [
+        [[1, 1, 2, 2, 1], [0, 0, 3, 3, 0]],
+    ]
     for ith in range(2):
         quad_xy_list = np.concatenate((
             np.reshape(xy_list[vs[long_edge][ith][0]], (1, 2)),
@@ -114,6 +127,7 @@ def _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge):
         if _is_point_inside_shrink(px, py, quad_xy_list, p_min, p_max):
             if nth == -1:
                 nth = ith
+            # TODO：不理解这个else，可能又在首又在尾吗？
             else:
                 nth = -1
                 break
@@ -222,6 +236,7 @@ class EastPreprocess(object):
             origin_txt_path = path.join(origin_txt_dir, origin_img_name[:-4] + '.txt')
 
             with Image.open(origin_img_path) as img:
+                # TODO：和别处中scale_ratio要对应
                 scale_ratio_w = d_width / img.width
                 scale_ratio_h = d_height / img.height
                 # resize后原始图片
@@ -246,16 +261,14 @@ class EastPreprocess(object):
                 xy_list = RecdataProcess.reorder_rec(xy_list)
                 four_points = xy_list.copy()
                 xy_list = np.reshape(xy_list, -1).tolist()
-                if anno_array[8] == 'number':
+                if anno_array[8] == 'number': # TODO：append到最后
                     xy_list.insert(1, 0)
                 elif anno_array[8] == 'plate':
                     xy_list.insert(1, 1)
                 recs_xy_list[i] = np.array(xy_list)  # 训练数据为原始xy_list经过按比例收缩和reorder
 
-                # TODO：画框&保存resize原始图片，需要画框时才收缩
-
-                # TODO：返回的第一个对象是收缩一组对边后的xy_list
                 if show_preprocess_img:
+                    # shrink之前已经重排
                     W_H_ratio = _get_W_H_ratio(four_points)
                     _, shrink_xy_list, _ = RecdataProcess.shrink(four_points, shrink_ratio)
                     shrink_1, _, long_edge = RecdataProcess.shrink(
@@ -264,9 +277,9 @@ class EastPreprocess(object):
                     # 原始框
                     draw.line(
                         [
-                            tuple(four_points[0]), 
+                            tuple(four_points[0]),
                             tuple(four_points[1]),
-                            tuple(four_points[2]), 
+                            tuple(four_points[2]),
                             tuple(four_points[3]),
                             tuple(four_points[0]),
                         ],
@@ -342,7 +355,7 @@ class EastPreprocess(object):
         产生标签文件
         Parameters
         ----------
-        
+
         Returns
         ----------
         """
@@ -362,25 +375,28 @@ class EastPreprocess(object):
                 line_cols[0].strip(),
                 int(line_cols[1].strip()),
                 int(line_cols[2].strip()),
-            )
+            )   
 
-            groung_truth = np.zeros((height // pixel_size, width // pixel_size, 8))
-            recs_xy_list = np.load(path.join(train_label_dir, img_name[:-4] + '.npy'))   
+            ground_truth = np.zeros((height // pixel_size, width // pixel_size, 8))
+            recs_xy_list = np.load(path.join(train_label_dir, img_name[:-4] + '.npy'))
 
             if show_label_img:
                 with Image.open(os.path.join(train_img_dir, img_name)) as img:
                     draw = ImageDraw.Draw(img)  # 用于显示label结果
 
             for xy_list in recs_xy_list:
-                
-                class_ = xy_list[1]
+
+                class_ = xy_list[1] # TODO：随preprocess中修改
                 xy_list = np.delete(np.array(xy_list), 1).reshape((4, 2))
                 W_H_ratio = _get_W_H_ratio(xy_list)
+                # shrink前无需reorder，preprocess中已经reorder
                 _, shrink_xy_list, _ = RecdataProcess.shrink(xy_list, shrink_ratio)
+                # 用于确定首尾
                 shrink_1, _, long_edge = RecdataProcess.shrink(
                     xy_list, shrink_side_ratio * W_H_ratio
                 )
-                
+
+                # TODO：优化
                 p_min = np.amin(shrink_xy_list, axis=0)
                 p_max = np.amax(shrink_xy_list, axis=0)
                 # floor of the float
@@ -396,23 +412,26 @@ class EastPreprocess(object):
                         px = (j + 0.5) * pixel_size
                         py = (i + 0.5) * pixel_size
                         if _is_point_inside_shrink(px, py, shrink_xy_list, p_min, p_max):
-                            groung_truth[i, j, 0] = 1
-                            groung_truth[i, j, 1] = class_
+                            ground_truth[i, j, 0] = 1
+                            ground_truth[i, j, 1] = class_
                             line_width, line_color = 1, 'red'
                             # 如果在首，ith = 0；在尾，ith = 1
-                            # TODO：紧急！检查long edge是否正确和vs对应
+                            # TODO：有问题
                             ith = _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge)
-                            vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
+                            # vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
                             # 固定long_edge = 0
-                            # vs = [[[1, 2], [3, 0]]]
-                            # in range(2) = 是首尾像素
+                            vs = [[[1, 2], [0, 3]]]
                             if ith in range(2):
-                                groung_truth[i, j, 2] = 1
-                                groung_truth[i, j, 3] = ith
-                                # 如果属于首像素，就是和第0 1点坐标之差
-                                # 如果属于尾像素，就是和第2 3点坐标之差
-                                groung_truth[i, j, 4:6] = xy_list[vs[long_edge][ith][0]] - [px, py]
-                                groung_truth[i, j, 6:8] = xy_list[vs[long_edge][ith][1]] - [px, py]
+                                ground_truth[i, j, 2] = 1
+                                ground_truth[i, j, 3] = ith
+                                # ith = 0:
+                                # --gt[4, 5] = xy_list[1] - [px, py]
+                                # --gt[6, 7] = xy_list[2] - [px, py]
+                                # ith = 1:
+                                # --gt[4, 5] = xy_list[0] - [px, py]
+                                # --gt[6, 7] = xy_list[3] - [px, py]
+                                ground_truth[i, j, 4:6] = xy_list[vs[long_edge][ith][0]] - [px, py]
+                                ground_truth[i, j, 6:8] = xy_list[vs[long_edge][ith][1]] - [px, py]
                                 line_width = 2
                                 line_color = 'yellow' if ith == 0 else  'green'
 
@@ -432,12 +451,11 @@ class EastPreprocess(object):
                     label_img_path = path.join(label_img_dir, img_name)
                     img.save(label_img_path)
 
-            np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), groung_truth)
+            np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), ground_truth)
 
 def _should_merge(region, i, j):
-    # region是x方向连接的多个像素，如果region与ij相连，should_merge = True
+    # region是j方向连接的多个像素，如果region与ij相连，should_merge = True
     neighbor = {(i, j - 1)}
-    # 
 
     return not region.isdisjoint(neighbor)
 
@@ -446,7 +464,7 @@ def _initial_region_group(region_list):
     region_groups = []
     region_group = []
     for region in region_list:
-        i_index = region.copy().pop()[0] # copy以避免改变集合中的值，集合可变对象是传地址
+        i_index = region.copy().pop()[0]  # copy以避免改变集合中的值，集合可变对象是传地址
         if not region_group:
             region_group.append(region)
             max_i_index = i_index
@@ -478,7 +496,7 @@ def _region_group(region_list):
             if len(S) == 0:
                 D.append([m])
             else:
-                D.append(_rec_region_merge(region_list, m, S)) 
+                D.append(_rec_region_merge(region_list, m, S))
 
     return D
 
@@ -492,7 +510,7 @@ def _rec_region_merge(region_list, m, S):
     tmp = []
     # TODO：可能的优化方向:排序。不需要和S中所有n计算，只计算上方一行和下方一行中的n
     # S中传入的是region序号，不包括region所在行号。可能需要结合region_list计算，或更改输入参数
-    # region_group耗时约20ms，可以暂不优化
+    # region_group耗时约4ms，可以暂不优化
     for n in S:
         # region_n在region_m下方相连或region_m在region_n下方相连
         # region_list[m]是m集合的地址，对region_list[m]改变会改变region_list中的值
@@ -502,9 +520,8 @@ def _rec_region_merge(region_list, m, S):
         ):
             # 第m与n相交
             tmp.append(n)
-    # 会改变S中内容
     for d in tmp:
-        S.remove(d)
+        S.remove(d)  # 会改变S中内容
     for e in tmp:
         rows.extend(_rec_region_merge(region_list, e, S))
     return rows
@@ -515,15 +532,15 @@ def _region_neighbor(region_set):
     #     * * r r r * *
     #     * n n n n n *
     # 其中*代表一般像素，r代表region中的像素，n代表region的neighbor
-    # 1/4优化，使用list操作代替np 
+    # 1/4优化，使用list操作代替np
     this_region_list = list(region_set)
+    i_m = this_region_list[0][0] + 1
     j_list = [ij[1] for ij in this_region_list]
     j_min, j_max = min(j_list) - 1, max(j_list) + 1
-    i_m = this_region_list[0][0] + 1
-    neighbor = {(i_m, ij[1]) for ij in this_region_list}
+    neighbor = {(i_m, j) for j in j_list}
     neighbor.add((i_m, j_min))
     neighbor.add((i_m, j_max))
-    
+
     return neighbor
 
 class EastData(object):
@@ -542,7 +559,6 @@ class EastData(object):
         return y
 
     # TODO：预测classes功能可能需要拆分
-    # TODO：进一步研究nms
     @staticmethod
     def nms(
         predict,
@@ -590,38 +606,53 @@ class EastData(object):
         recs_classes_list = []
         # 对于每个rec
         for group, g_th in zip(D, range(len(D))):
-            total_score = np.zeros((4, 2))  
+            total_score = np.zeros((4, 2))
             classes_score, cnt = 0, 0
             for row in group:
                 for ij in region_list[row]:
-                    classes_score += predict[ij[0], ij[1], 1]
+                    this_predict = predict[ij[0], ij[1]]
+                    classes_score += this_predict[1]
                     cnt += 1
                     # 边界得分
                     score = predict[ij[0], ij[1], 2]
                     # 如果是边界像素
                     if score >= side_vertex_pixel_threshold:
                         # ith_score表示头尾得分
-                        ith_score = predict[ij[0], ij[1], 3]
+                        ith_score = this_predict[3]
                         if not trunc_threshold <= ith_score < 1 - trunc_threshold:
-                            ith = int(np.around(ith_score))
-                            # score为是否为边界像素得分
-                            total_score[ith * 2:(ith + 1) * 2] += score
-                            # TODO：recs_xy_list * cfg.pixel_size替代，原始是px,py * pixel_size
-                            px, py = ij[1] + 0.5, ij[0] + 0.5
-                            p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 4:8], (2, 2))
+                            ith = int(ith_score + 0.5)
+                            # ith = 0:
+                            # --gt[4, 5] = xy_list[1] - [px, py]
+                            # --gt[6, 7] = xy_list[2] - [px, py]
+                            # ith = 1:
+                            # --gt[4, 5] = xy_list[0] - [px, py]
+                            # --gt[6, 7] = xy_list[3] - [px, py]
+                            # p_v = [[4, 5], [6, 7]]
+                            px, py = (ij[1] + 0.5) * pixel_size, (ij[0] + 0.5) * pixel_size
+                            p_v = [px, py] + np.reshape(this_predict[4:8], (2, 2))
+                            if ith == 0:
+                                total_score[1] += score
+                                total_score[2] += score
+                                recs_xy_list[g_th, 1] += score * p_v[0]
+                                recs_xy_list[g_th, 2] += score * p_v[1]
+                            elif ith == 1:
+                                total_score[0] += score
+                                total_score[3] += score
+                                recs_xy_list[g_th, 0] += score * p_v[0]
+                                recs_xy_list[g_th, 3] += score * p_v[1]
                             # 第g_th个rec的首或尾加上该像素得分*该像素判断首尾坐标
-                            recs_xy_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
+                            # recs_xy_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
             classes_score /= cnt
             # TODO：设为函数参数，是否考虑加一类不确定
             recs_classes_list.append('编号' if classes_score < 0.5 else '铭牌')
             score_list[g_th] = total_score[:, 0]
             # recs_xy_list = (第i个像素score * 第i个像素p_v) / total_score
-            recs_xy_list[g_th] = recs_xy_list[g_th] * pixel_size / (total_score + cfg.epsilon)
+            recs_xy_list[g_th] = recs_xy_list[g_th] / (total_score + cfg.epsilon)
 
         if return_classes:
             return score_list, recs_xy_list, recs_classes_list
         return score_list, recs_xy_list
-        
+
     @staticmethod
     def generator(
         batch_size=cfg.batch_size,

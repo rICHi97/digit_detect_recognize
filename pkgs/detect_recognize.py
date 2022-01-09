@@ -14,7 +14,7 @@ from .recdata import recdata_processing, recdata_io
 from .tool import visualization
 
 EastNet = east_net.EastNet
-OUTPUT_IMG_PATH = './source/tmp.jpg'  # 基于根目录运行入口文件
+OUTPUT_IMG_PATH = './resource/tmp.jpg'  # 基于根目录运行入口文件
 RecdataRecognize = recdata_processing.RecdataRecognize
 RecdataIO = recdata_io.RecdataIO
 RecDraw = visualization.RecDraw
@@ -43,25 +43,25 @@ class EndToEnd(object):
         """    
         _ = self.east.predict(img_dir_or_path=img_path)
         recs_xy_list, recs_classes_list = _[0][0], _[1][0]
+
         img = Image.open(img_path)
         img_name = path.basename(img_path)
 
-         # 演示用
-        # img_txt_path = f'./source/test_data/label_txt/{img_name[:-4]}.txt'
-        # recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(img_txt_path, True)
+        # 不包括识别信息
         # for i, xy_list in enumerate(recs_xy_list):
         #     RecDraw.draw_rec(xy_list, img)
         #     RecDraw.draw_text(recs_classes_list[i], xy_list, img)
 
+        # 区别于上文，这是识别成功的
         recognize_recs_list = RecdataRecognize.recognize(
             img, img_name, recs_xy_list, recs_classes_list
         )
-        # 区别于上文，这是识别成功的
         recs_xy_list, recs_classes_list, recs_text_list = [], [], []
         for rec in recognize_recs_list:
             recs_xy_list.append(rec.xy_list)
             recs_classes_list.append(rec.classes)
             recs_text_list.append(rec.text)
+            print(rec.text)
             RecDraw.draw_text(rec.text, rec.xy_list, img)
         RecDraw.draw_recs(recs_xy_list, img)
         img.save(OUTPUT_IMG_PATH)

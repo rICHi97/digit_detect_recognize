@@ -609,19 +609,19 @@ class RecdataProcess(object):
             return
         start_point = edge
         end_point = (edge + 1) % 4
-        
+
         long_start_sign_x = np.sign(xy_list[end_point, 0] - xy_list[start_point, 0])
         new_xy_list[start_point, 0] = (
-            xy_list[start_point, 0] + 
+            xy_list[start_point, 0] +
             long_start_sign_x * ratio * r[start_point] * np.cos(theta[start_point])
         )
-            
+
         long_start_sign_y = np.sign(xy_list[end_point, 1] - xy_list[start_point, 1])
         new_xy_list[start_point, 1] = (
-            xy_list[start_point, 1] + 
+            xy_list[start_point, 1] +
             long_start_sign_y * ratio * r[start_point] * np.sin(theta[start_point])
         )
-            
+
         # long edge one, end point
         long_end_sign_x = -1 * long_start_sign_x
         new_xy_list[end_point, 0] = (
@@ -631,7 +631,7 @@ class RecdataProcess(object):
         long_end_sign_y = -1 * long_start_sign_y
         new_xy_list[end_point, 1] = (
             xy_list[end_point, 1] +
-            long_end_sign_y * ratio * r[end_point] * np.sin(theta[start_point])   
+            long_end_sign_y * ratio * r[end_point] * np.sin(theta[start_point])
         )
 
     # TODO：研究代码
@@ -663,9 +663,10 @@ class RecdataProcess(object):
         事实上xy_list已经经过重排，长边所在组已经固定
         '''
         # long_edge = int(np.argmax(np.sum(np.reshape(dis, (2, 2)), axis=0)))
-        long_edge = 1
+        # TODO
+        long_edge = 0
         short_edge = 1 - long_edge
-        # 领边中的短边
+        # 邻边中的短边长度
         r = [np.minimum(dis[i], dis[(i + 1) % 4]) for i in range(4)]
         # cal theta array
         diff_abs = np.abs(diff)
@@ -681,6 +682,7 @@ class RecdataProcess(object):
         new_xy_list = np.copy(temp_new_xy_list)
         RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge, r, theta, ratio)
         RecdataProcess._shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, ratio)
+        # xy_list长边收缩得到temp，temp再收缩短边得到new
 
         return temp_new_xy_list, new_xy_list, long_edge
 

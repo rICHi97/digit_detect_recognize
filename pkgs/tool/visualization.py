@@ -6,16 +6,20 @@ Created on 2021-10-02 14:39:31
 本模块用于实现可视化，包括端子排图片可视化以及绘图可视化
 """
 import os
+from os import path
 
-from keras import preprocessing
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from . import cfg
 from ..east import east_data
 from ..recdata import recdata_io, recdata_processing
 
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
+RecdataIO = recdata_io.RecdataIO
+
+
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
 def _get_img(img):
 
@@ -24,7 +28,7 @@ def _get_img(img):
         pass
     elif isinstance(img, str):
         img = Image.open(img)
-  
+
     return img
 
 def _get_font(font, size=32):
@@ -34,8 +38,12 @@ def _get_font(font, size=32):
     elif isinstance(font, str):
         return ImageFont.truetype(font, size)
     elif font is None:
-        return ImageFont.truetype('../source/font/HGBTS_CNKI.TTF')
+        return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF')
 
+# TODO：统一输入格式为PIL.Image
+# 输入Image，对img即时修改，方法外手动保存
+# 输入路径，那就得在api内部保存图片，参数需要增加输出路径
+# 内部保存图片不利于对一张图片调用多个draw方法
 class RecDraw(object):
     """
     主要用于在端子排图片上绘制
@@ -150,34 +158,39 @@ class RecDraw(object):
                 RecDraw.draw_text(text, xy_list, img, color)
     
     @staticmethod
-    def draw_gt_file(gt_filepath, img_filepath, max_train_img_size=832):
+    def draw_gt(
+        gt_path,
+        img_path,
+        resized=False,
+        max_img_size=cfg.gt_max_img_size,
+        output_dir=cfg.gt_output_dir,
+    ):
+        """
+        gt文件中的xy_list是基于resize后图片，使用本api前确认img为原始图片还是resize图片
+        Parameters
+        ----------
+        resized：img_path所指img是否为resize后图片。若为原始图片，resized = False。
 
-        recs_xy_list = []
-        predicts = np.load(gt_filepath)
-        # gt，无需sigmoid
-        activation_pixels = np.where(np.greater_equal(predicts[:, :, 0], 1))
-        recs_score, recs_after_nms, classes_list = EastData.nms(predicts, activation_pixels, return_classes=True)
-        img = preprocessing.image.load_img(img_filepath).convert('RGB')
-        d_width, d_height = max_train_img_size, max_train_img_size
-        scale_ratio_w, scale_ratio_h = img.width / d_width, img.height / d_height
+        Returns
+        ----------
+        """
+        recs_xy_list, recs_classes_list = RecdataIO.read_gt(gt_path)
+        d_width, d_height = max_img_size, max_img_size
+        img = Image.open(img_path)
+        if not resized:
+            scale_ratio_w, scale_ratio_h = img.width / d_width, img.height / d_height
 
-        for score, rec, classes in zip(recs_score, recs_after_nms, classes_list):
-            if np.amin(score) > 0:
-                # 需要乘scale_ratio，gt文件是图片resize后的
-                rec = np.reshape(rec, (4, 2))
-                rec[:, 0] *= scale_ratio_w
-                rec[:, 1] *= scale_ratio_h
-                if classes > 0.9:
-                    classes = '铭牌'
-                else:
-                    classes = '编号'
-                xy_list = np.reshape(rec, (8,)).tolist()
-                # TODO：检查recs_xy_list是否两个反转了
-                RecDraw.draw_rec(xy_list, img)
-                RecDraw.draw_text(classes, xy_list, img)
-        img.save('test.jpg')
+        for xy_list, classes in zip(recs_xy_list, recs_classes_list):
+            xy_list = np.asarray(xy_list).reshape((4, 2))
+            if not resized:
+                xy_list[:, 0] *= scale_ratio_w
+                xy_list[:, 1] *= scale_ratio_h
+            xy_list = xy_list.tolist()
+            RecDraw.draw_rec(xy_list, img)
+            RecDraw.draw_text(classes, xy_list, img)
 
-        # TODO：输出分类信息
+        img.save(path.join(output_dir, path.basename(img_path)))
+
 
 class GraphDraw:
     pass

@@ -226,6 +226,7 @@ class ImageProcess(object):
     # TODO：函数拆分，整理代码
     # TODO：主要花费时间为crop和save，后续尝试优化
     # TODO：根据img大小自适应裁切次数
+    # TODO：cfg参数化
     @staticmethod
     def random_crop(img, label, output_dir, count, boundary_thres, boundary_ratio, label_keyword):
         """

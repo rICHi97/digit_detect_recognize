@@ -8,7 +8,7 @@ train_task_id = '3T832'
 initial_epoch = 0
 epoch_num = 48
 
-data_dir = './source/train_data/'
+data_dir = './resource/train_data/'
 origin_img_dir = 'a_img'
 origin_txt_dir = 'a_txt'
 train_img_dir = 'b_train_img'
@@ -16,13 +16,13 @@ train_label_dir = 'b_train_label'
 preprocess_img_dir = 'c_preprocess_img'
 label_img_dir = 'c_label_img'
 
-save_weights_filepath = f'./source/east_model/{train_task_id}.h5'
-east_weights_filepath = './source/east_model/030-0.132.h5'
-# east_weights_filepath = './source/east_model/weights_3T832.020-0.113.h5'
-img_dir = './source/test_data/image/'
+save_weights_filepath = f'./resource/east_model/{train_task_id}.h5'
+east_weights_filepath = './resource/east_model/019-0.142.h5'
+# east_weights_filepath = './resource/east_model/weights_3T832.020-0.113.h5'
+img_dir = './resource/test_data/image/'
 predict_img_dir = None
 output_txt = True
-output_txt_dir = './source/test_data/image_txt'
+output_txt_dir = './resource/test_data/image_txt'
 
 val_ratio = 0.2
 val_filename = f'val_{train_task_id}.txt'
@@ -37,8 +37,8 @@ lr = 1e-4
 decay = 5e-4
 
 preprocess_verbose = False
-show_preprocess_img = True
-show_label_img = True
+show_preprocess_img = False
+show_label_img = False
 show_predict_img = False
 
 # in paper it's 0.3, maybe to large to this problem
@@ -68,7 +68,7 @@ lambda_side_vertex_coord_loss = 1.0
 callbacks = ['early_stopping', 'check_point', 'reduce_lr']
 early_stopping_patience = 8
 early_stopping_verbose = True
-check_point_filepath = './source/east_model/{epoch:03d}-{val_loss:.3f}.h5'
+check_point_filepath = './resource/east_model/{epoch:03d}-{val_loss:.3f}.h5'
 check_point_period = 1
 check_point_verbose = True
 reduce_lr_monitor = 'val_loss'

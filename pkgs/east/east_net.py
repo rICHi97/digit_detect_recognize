@@ -234,7 +234,7 @@ class EastNet(object):
             x[0] = tf_img
             # TODO：明确输出y的shape
             y_pred = self.east_model.predict(x)
-            y = y_pred[0]  # size * 8
+            y = y_pred[0]  # x_height / pixel_size * x_width / pixel_size * 8
             y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
             condition = np.greater_equal(y[:, :, 0], pixel_threshold)
             activation_pixels = np.asarray(condition).nonzero()
