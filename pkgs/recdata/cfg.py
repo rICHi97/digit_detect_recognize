@@ -5,8 +5,7 @@ Created on 2021-12-11 02:54:57
 @author: Li Zhi
 """
 # Recdata
-x_coef = 0.5
-y_coef = 0.5
-W_coef = 0.125
-H_coef = 0.25
+W_coef = 0.25
+H_coef = 0.37
+offset_coef = -0.22
 joint_img_dir = './resource/joint_img/'

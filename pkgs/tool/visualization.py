@@ -41,6 +41,7 @@ def _get_font(font, size=32):
         return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF')
 
 # TODO：统一输入格式为PIL.Image
+# TODO：cfg参数化
 # 输入Image，对img即时修改，方法外手动保存
 # 输入路径，那就得在api内部保存图片，参数需要增加输出路径
 # 内部保存图片不利于对一张图片调用多个draw方法

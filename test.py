@@ -9,14 +9,8 @@ import time
 from pkgs.tool import code_testing
 
 CodeTest = code_testing.CodeTest
-
+# TODO：编号10有问题A
 start = time.process_time()
-# 检查label生成过程与nms
-# CodeTest.test_preprocess()
-# CodeTest.test_label()
-CodeTest.test_draw_gt()
-
+CodeTest.test_end_to_end()
 end = time.process_time()
 print(end - start)
-    
-

@@ -19,6 +19,7 @@ ImageProcess = image_processing.ImageProcess
 RecDraw = visualization.RecDraw
 EndToEnd = detect_recognize.EndToEnd
 EastPreprocess = east_data.EastPreprocess
+Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 RecdataIO = recdata_io.RecdataIO
 RecdataRecognize = recdata_processing.RecdataRecognize
@@ -72,7 +73,7 @@ class CodeTest(object):
         """
         测试对于不同类别的，打乱顺序的（重点）能否分开
         Parameters
-        ----------      
+        ----------
         Returns
         ----------
         """
@@ -83,7 +84,28 @@ class CodeTest(object):
         pca_values = PCA.get_pca_values(reorder_recs_xy_list)
         divide_groups = PCA.divide_recs(pca_values)
 
-        return reorder_recs_xy_list      
+        return divide_groups
+
+    @staticmethod
+    def test_get_text_area(
+        img_path=cfg.test_get_text_area_img_path,
+        recs_txt_path=cfg.test_get_text_area_txt_path,
+    ):
+        """
+        Parameters
+        ----------
+        
+        Returns
+        ----------
+        """
+        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(recs_txt_path, True)
+        recs_text_area = []
+        for i, classes in enumerate(recs_classes_list):
+            if classes == '编号':
+                recs_text_area.append(Recdata.get_text_area(recs_xy_list[i]))
+        img = Image.open(img_path)
+        RecDraw.draw_recs(recs_text_area, img)
+        img.save('text.jpg')
 
     @staticmethod
     def test_recognize(
@@ -97,15 +119,29 @@ class CodeTest(object):
         recs_txt_path：label txt，每行数据包括4个端点坐标和类别信息
         Returns
         ----------
-        """    
+        """
         img = _get_img(img_path)
-        img_name = path.basename(img_path)[:-4] 
+        img_name = path.basename(img_path)[:-4]
         recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(
             recs_txt_path, return_classes_list=True
         )
         recdata = RecdataRecognize.recognize(img, img_name, recs_xy_list, recs_classes_list)
 
         return recdata
+
+    @staticmethod
+    def test_end_to_end(
+        img_path=cfg.test_end_to_end_img_path,
+    ):
+        """
+        Parameters
+        ----------
+        Returns
+        ----------
+        """
+        end_to_end = EndToEnd()
+        end_to_end.detect_recognize(img_path)
+
 
     @staticmethod
     def test_draw_label_txt(
@@ -140,19 +176,6 @@ class CodeTest(object):
         """
         RecDraw.draw_gt(gt_path, img_path, resized)
 
-    @staticmethod
-    def test_end_to_end(
-        img_path=cfg.test_end_to_end_img_path,
-    ):
-        """
-        Parameters
-        ----------
-        
-        Returns
-        ----------
-        """
-        end_to_end = EndToEnd()
-        end_to_end.detect_recognize(img_path)
 
 class ParamOptimize():
     """
@@ -174,10 +197,10 @@ class ParamOptimize():
 # if test_east_net:
 
 #     east = EastNet()
-#     east.east_model.summary()    
+#     east.east_model.summary()
 
 # if test_east_data:
-        
+
 #     EastPreprocess.preprocess()
 #     EastPreprocess.label()
 
@@ -255,7 +278,7 @@ class ParamOptimize():
 #         #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
 #         #         visualization.RecDraw.draw_rec(
 #         #             xy_list, img, width=2, color='black', distinguish_first_side=True
-                    
+
 #         #         )
 #         #         _.append(xy_list)
 #         #     imgs_rec_dict[key] = _
@@ -284,14 +307,14 @@ class ParamOptimize():
 #         #         xy_list = recdata_processing.Recdata.get_xy_list(rec_shape_data)
 #         #         visualization.RecDraw.draw_rec(
 #         #             xy_list, img, width=2, color='black', distinguish_first_side=True
-                    
+
 #         #         )
 #         #         _.append(xy_list)
 #         #     imgs_rec_dict[key] = _
 #         img.save('./resource/test_data/' + img_name + '.jpg')
 
 # if test_show_gt:
-    
+
 #     gt_filepath = './resource/train_data/b_train_label/terminal_5_number_1_gt.npy'
 #     img_filepath = './resource/train_data/a_img/terminal_5_number_1.jpg'
 #     RecDraw.draw_gt_file(gt_filepath, img_filepath)

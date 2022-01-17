@@ -43,7 +43,10 @@ class RecdataIO(object):
                 # len = 8，是recs_xy_list txt；
                 # len = 9，是label txt
                 if len(line) == 9:
-                    classes = '编号' if line[-1] == 'number' else '铭牌'
+                    if line[-1] == 'number' or line[-1] == '编号':
+                        classes = '编号'
+                    else:
+                        classes = '铭牌'
                     line = line[:-1]
                     recs_classes_list.append(classes)
                 xy_list = [float(xy) for xy in line]
@@ -133,8 +136,9 @@ class RecdataIO(object):
 
         return recs_xy_list, recs_classes_list
 
+    # TODO：cfg设置txt_dir
     @staticmethod
-    def write_rec_txt(recs_xy_list, txt_dir, txt_name):
+    def write_rec_txt(recs_xy_list, txt_dir, txt_name, recs_classes_list=None):
         """
         Parameters
         ----------
@@ -146,8 +150,10 @@ class RecdataIO(object):
         ----------
         """
         lines = []
-        for xy_list in recs_xy_list:
+        for i, xy_list in enumerate(recs_xy_list):
             line = ','.join([f'{xy:.2f}' for xy in xy_list])
+            if recs_classes_list is not None:
+                line += f',{recs_classes_list[i]}'
             line += '\n'
             lines.append(line)
         txt_path = path.join(txt_dir, txt_name)

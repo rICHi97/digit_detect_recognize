@@ -33,4 +33,3 @@ class UserDialog(QDialog):
     def closeEvent(self, event):  #pylint: disable=C0116
         self.close_signal.emit()
         QDialog.closeEvent(self, event)
-

@@ -26,6 +26,13 @@ class EndToEnd(object):
     """
     def __init__(self):
         self.east = EastNet()
+        self.east.load_weights()
+
+    def test_predict(self, img_path):
+
+        _ = self.east.predict(img_dir_or_path=img_path)
+        recs_xy_list, recs_classes_list = _[0][0], _[1][0]
+        RecdataIO.write_rec_txt(recs_xy_list, './', 'test.txt', recs_classes_list)
 
     def detect_recognize(self, img_path):
         """
@@ -40,7 +47,7 @@ class EndToEnd(object):
         Returns
         ----------
         result_img：图片，PIL.Image
-        """    
+        """
         _ = self.east.predict(img_dir_or_path=img_path)
         recs_xy_list, recs_classes_list = _[0][0], _[1][0]
 

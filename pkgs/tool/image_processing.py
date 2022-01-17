@@ -43,6 +43,7 @@ class ImageProcess(object):
     用于处理图片
     """
     # TODO：仅裁切数字部分
+    # TODO:尝试使用透视变换替代当前的旋转变换
     @staticmethod
     def crop_rec(
         img, xy_list, coef_x_len=cfg.coef_x_len, coef_y_len=cfg.coef_y_len
@@ -118,15 +119,14 @@ class ImageProcess(object):
     @staticmethod
     def joint_rec(
         img,
-        img_name, 
+        img_name,
         recs_xy_list,
         classes,
-        max_joint_img_width=cfg.max_joint_img_width, 
-        joint_img_height=cfg.joint_img_height, 
-        img_rec_height=cfg.img_rec_height, 
+        max_joint_img_width=cfg.max_joint_img_width,
+        joint_img_height=cfg.joint_img_height,
+        img_rec_height=cfg.img_rec_height,
         spacing=cfg.spacing,
         joint_img_dir=cfg.joint_img_dir,
-        preprocess_img_rec=cfg.preprocess_img_rec,
     ):
         """
         拼接多个rec为一张或多张图片
@@ -147,30 +147,24 @@ class ImageProcess(object):
         joint_data：字典，结构为
         {'classes_cnt.jpg':[Rec1, Rec2, Rec3]}
         """
-
         # TODO：铭牌大小不能超过api限制
         this_joint_img_dir = path.join(joint_img_dir, img_name)
         if not path.exists(this_joint_img_dir):
             os.mkdir(this_joint_img_dir)
-        cnt = 0
-        joint_img_name = f'{classes}_{cnt}.jpg'    
-        joint_data = {joint_img_name: []}
 
-        img_rec_list = []
-        # classes='plate'，recs_xy_list只有一个xy_list
+        cnt = 0
+        joint_img_name = f'{classes}_{cnt}.jpg'
+        joint_data, img_rec_list = {joint_img_name: []}, []
+        # TODO：这个循环里直接paste rec
         for xy_list  in recs_xy_list:
             img_rec = ImageProcess.crop_rec(img, xy_list)
-            assert (not img_rec.width == 0) and (not img_rec.height == 0), (
-                f'{xy_list}裁切图片的宽高应大于0'
-            )
-
+            assert not img_rec.width * img_rec.height == 0, (f'{xy_list}裁切宽高应大于0')
             if classes == 'plate':
                 rec = Rec(xy_list=xy_list, classes=classes)
                 joint_data[joint_img_name].append(rec)
                 joint_img_path = path.join(this_joint_img_dir, joint_img_name)
                 img_rec.save(joint_img_path)
                 return joint_data
-                
             img_rec = img_rec.resize(
                 (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
             )
@@ -181,7 +175,7 @@ class ImageProcess(object):
         available_width = max_joint_img_width
         paste_x, paste_y = 0, int((joint_img_height - img_rec_height) / 2)
         for i, img_rec in enumerate(img_rec_list):
-            # img_rec = ImageProcess.preprocess_img(img_rec)
+            img_rec = ImageProcess.preprocess_img(img_rec)
             if available_width < spacing + img_rec.width:
                 joint_img_path = path.join(this_joint_img_dir, joint_img_name)
                 joint_img.save(joint_img_path)
@@ -191,37 +185,41 @@ class ImageProcess(object):
                 joint_data[joint_img_name] = []
                 available_width = max_joint_img_width
                 paste_x = 0
-
             joint_img.paste(img_rec, (paste_x, paste_y))
-            paste_x += spacing + img_rec.width
-            available_width -= spacing + img_rec.width
             rec = Rec(xy_list=recs_xy_list[i], classes=classes)
             rec.set_attr(
                 joint_img_name=joint_img_name, joint_x_position=(paste_x, paste_x + img_rec.width)
             )
             joint_data[joint_img_name].append(rec)
+            paste_x += spacing + img_rec.width
+            available_width -= spacing + img_rec.width
+        joint_img_path = path.join(this_joint_img_dir, joint_img_name)
+        joint_img.save(joint_img_path)
 
         return joint_data
 
-
+    # TODO：可选预处理方式
     @staticmethod
     def preprocess_img(
         img,
+        threshold=cfg.threshold,
     ):
         """
         Parameters
         ----------
-        
         Returns
         ----------
         """
         img_in = np.array(img)
         img_out = np.zeros(img_in.shape, np.uint8)
-        cv2.normalize(img_in, img_out, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)  #pylint: disable=E1101
-        _, img_out = cv2.threshold(img_out, 118, 255, cv2.THRESH_TOZERO)  #pylint: disable=E1101
-        img_rec = Image.fromarray(img_out.astype(np.int32))  
+        # 归一化
+        cv2.normalize(img_in, img_out, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
+        if threshold:
+            blur = cv2.GaussianBlur(img_out, (3, 3), 0)
+            _, img_out = cv2.threshold(blur, 118, 255, cv2.THRESH_TOZERO + cv2.THRESH_OTSU) # 返回：阈值，thres图片
+        img_rec = Image.fromarray(img_out.astype(np.int32))
 
-        return img_rec      
+        return img_rec
 
     # TODO：函数拆分，整理代码
     # TODO：主要花费时间为crop和save，后续尝试优化
@@ -245,12 +243,12 @@ class ImageProcess(object):
         ----------
         """
         def crop_img(img_filepath, label_filepath):
-            
+
             # TODO：裁切区域的宽高需要大于一定阈值
             def from_label_get_crop_region(
                 label_region, img_width, img_height, x_threshold=None, y_threshold=None,
             ):
-                
+
                 label_x = [label_region[2 * i] for i in range(4)]
                 label_y = [label_region[2 * i + 1] for i in range(4)]
                 # 包络label的矩形
@@ -258,7 +256,7 @@ class ImageProcess(object):
                 label_xmax = min(math.floor(max(label_x) + 1), img_width)
                 label_ymin = math.floor(min(label_y))
                 label_ymax = min(math.floor(max(label_y) + 1), img_height)
-                
+
                 crop_region_xmin = random.randint(0, label_xmin)
                 crop_region_xmax = random.randint(label_xmax, img_width)
                 crop_region_ymin = random.randint(0, label_ymin)
@@ -284,7 +282,7 @@ class ImageProcess(object):
                 return True
 
             def update_label_region(label_region, crop_region):
-                
+
                 xmin, ymin = crop_region[0], crop_region[1]
                 new_label_region = []
                 for i in range(4):
@@ -311,7 +309,7 @@ class ImageProcess(object):
             get_region = lambda label_line: [float(point) for point in label_line.split(',')[:8]]
             get_label = lambda label_line: label_line.split(',')[-1]
             is_keyword_label = (
-                lambda label_line: 
+                lambda label_line:
                     True if label_keyword is None or label_keyword in get_label(label_line)
                     else False
             )
@@ -326,14 +324,14 @@ class ImageProcess(object):
             width, height = img.size[0], img.size[1]
 
             while i < count:
-                
+
                 random_label_line = random.choice(label_lines)
                 random_label_region = get_region(random_label_line)
                 crop_region = from_label_get_crop_region(random_label_region, width, height)
                 _ = [
-                        crop_region[0], crop_region[1], 
-                        crop_region[2], crop_region[1], 
-                        crop_region[2], crop_region[3], 
+                        crop_region[0], crop_region[1],
+                        crop_region[2], crop_region[1],
+                        crop_region[2], crop_region[3],
                         crop_region[0], crop_region[3],
                     ]
                 c = Polygon(np.array(_).reshape((4, 2)))
@@ -370,7 +368,7 @@ class ImageProcess(object):
                     f.writelines(crop_lines)
 
                 i += 1
-        
+
         # TODO：仅裁切一张图片和对应label
         img_dir = img if path.isdir(img) else path.dirname(img)
         label_dir = label if path.isdir(label) else path.dirname(label)

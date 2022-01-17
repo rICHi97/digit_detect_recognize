@@ -8,6 +8,7 @@ Created on 2021-11-19 00:36:11
 """
 本模块用以进行east网络的搭建及训练工作
 """
+# TODO：动态网络结构
 import os
 from os import path
 
@@ -66,11 +67,9 @@ class EastNet(object):
         self.input_img = Input(
             name='input_img', shape=(None, None, cfg.num_channels), dtype='float32'
         )
-
         vgg16 = VGG16(
             input_tensor=self.input_img, weights='imagenet', include_top=False
         )
-
         # block5_pool, block4_pool, block3_pool, block2_pool
         self._f = [vgg16.get_layer(f'block{i}_pool').output for i in feature_layers_range]
         # [None, blcok5_pool,...,block2_pool]
@@ -80,7 +79,7 @@ class EastNet(object):
         # i + diff是第i小的值
         self.diff = feature_layers_range[0] - feature_layers_num
         self.east_model = self.network()
-
+        self.is_load_weights = False
 
     def _g(self, i):
         # i+diff in cfg.feature_layers_range
@@ -129,7 +128,7 @@ class EastNet(object):
         # Layers()
         # 增加class_score用于区分是端子铭牌还是端子编号
         inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
-        classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)        
+        classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)
         side_v_code = Conv2D(2, 1, padding='same', name='side_vertex_code')(before_output)
         side_v_coord = Conv2D(4, 1, padding='same', name='side_vertex_coord')(before_output)
         east_detect = (
@@ -138,7 +137,7 @@ class EastNet(object):
             )
         )
 
-        return Model(inputs=self.input_img, outputs=east_detect)  
+        return Model(inputs=self.input_img, outputs=east_detect)
 
     def train(
         self,
@@ -181,6 +180,13 @@ class EastNet(object):
         )
         self.east_model.save_weights(save_weights_filepath)
 
+    def load_weights(
+        self,
+        east_weights_filepath=cfg.east_weights_filepath,
+    ):
+        self.east_model.load_weights(east_weights_filepath)
+        self.is_load_weights = True
+
     # TODO：对于尺寸较大的图片，先裁切再predict
     # TODO：terminal_23识别有问题
     # TODO：num_img封装图片为batch检测，研究keras文档api调用说明
@@ -211,7 +217,8 @@ class EastNet(object):
         imgs_recs_xy_list：所有图片的多个rec的四点坐标
         imgs_recs_classes_list：所有图片的rec类别信息
         """
-        self.east_model.load_weights(east_weights_filepath)
+        if not self.is_load_weights:
+            self.load_weights()
 
         if path.isdir(img_dir_or_path):
             img_files = os.listdir(img_dir_or_path)
@@ -254,7 +261,7 @@ class EastNet(object):
 
             imgs_recs_xy_list.append(recs_xy_list)
             imgs_recs_classes_list.append(recs_classes_list)
-                        
+
         return imgs_recs_xy_list, imgs_recs_classes_list
 
 

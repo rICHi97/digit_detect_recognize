@@ -9,6 +9,8 @@ Created on 2021-12-07 15:40:09
 # code_testing
 test_joint_rec_img_path = './resource/test_data/image/1.jpg'
 test_joint_rec_txt_path = './resource/test_data/image_txt/1.txt'
+test_get_text_area_img_path = './resource/test_data/image/10148.png'
+test_get_text_area_txt_path = './resource/10148.txt'
 test_recognize_img_path = './resource/test_data/image/terminal_5_number_1.jpg'
 test_recognize_recs_txt_path = './resource/test_data/label_txt/terminal_5_number_1.txt'
 test_draw_label_txt_img_path = './resource/train_data/image/terminal_10_number_1.jpg'
@@ -18,16 +20,16 @@ test_draw_gt_gt_path = './resource/train_data/b_train_label/terminal_10_number_1
 # test_draw_gt_gt_path = './resource/test_data/gt_image/terminal_10_number_10_gt.npy' # 之前版本label
 test_draw_gt_img_path = './resource/test_data/gt_image/terminal_10_number_13.jpg'
 test_draw_gt_resized = False
-test_end_to_end_img_path = './resource/test_data/image/terminal_7.png'
+test_end_to_end_img_path = './resource/test_data/image/10148.png'
 
 # image_processing
 coef_x_len, coef_y_len = 0.23, 0.02
 joint_img_dir = './resource/joint_img/'
 max_joint_img_width = 1000
-joint_img_height = 42
-img_rec_height = 30
-spacing = 20
-preprocess_img_rec = True
+joint_img_height = 60
+img_rec_height = 40
+spacing = 30
+threshold = True
 
 # tool
 # UiTool
