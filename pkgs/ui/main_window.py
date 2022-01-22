@@ -58,13 +58,8 @@ class MainWindow():
 
     def show(self):  #pylint: disable=C0116
         self.main_window.show()
+        # TODO：show了之后才能setPixmap？
         self.ui_main_window.label_2.setPixmap(QPixmap(":/mainwindow/img/db_disconnected"))
-
-    def close(self):  #pylint: disable=C0116
-        self.main_window.close()
-
-    def on_btn_clicked(self):
-        pass
 
     def set_terminal_img(self, img_path):
         """
@@ -74,7 +69,6 @@ class MainWindow():
         Returns
         ----------
         """
-        # TODO：设置铺满
         self.ui_main_window.label_4.setPixmap(QPixmap(img_path))
         self.ui_main_window.label_4.setScaledContents(True)
 

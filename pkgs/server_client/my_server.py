@@ -11,6 +11,7 @@ from .. import detect_recognize
 EndToEnd = detect_recognize.EndToEnd
 
 
+# TODO：cfg参数化
 # 创建一个服务，接受输入图片路径，返回
 class Server():
 

@@ -35,9 +35,10 @@ class UiTool():
         py_name = qrc_filename + '_rc.py'
         py_path = path.join(output_dir, py_name)
         expr = f'pyrcc5 -o {py_path} {qrc_path}'
-        subprocess.run(expr)
-        expr = f'pyrcc5 -o ./ui/ {qrc_path}'
-        subprocess.run(expr)
+        subprocess.run(expr)  #pylint: disable=W1510
+        # 当在ui文件夹内运行时需要
+        # expr = f'pyrcc5 -o ./ui/ {qrc_path}'
+        # subprocess.run(expr)
         if delete_qrc:
             os.remove(qrc_path)
 
@@ -51,7 +52,7 @@ class UiTool():
         使用qt workspace中的ui.py更新本项目中的ui.py
         Parameters
         ----------
-        
+
         Returns
         ----------
         """
@@ -61,4 +62,3 @@ class UiTool():
             new_file = path.join(new_code_dir, file)
             shutil.copy(new_file, old_code_dir)
 
-        

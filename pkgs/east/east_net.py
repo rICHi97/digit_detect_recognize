@@ -29,10 +29,9 @@ Conv2D = layers.Conv2D
 UpSampling2D = layers.UpSampling2D
 # image = preprocessing.image  容易混淆
 Adam = optimizers.Adam
-Session = v1.Session
-logging = v1.logging
 ConfigProto = v1.ConfigProto
-
+logging = v1.logging
+Session = v1.Session
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 
@@ -111,6 +110,17 @@ class EastNet(object):
         conv_3 = Conv2D(128 // 2 ** (i - 2), 3, activation='relu', padding='same')(bn2)
 
         return conv_3
+
+    def get_graph(self):
+        """
+        获取当前的默认图，主要是与多线程相关
+        Parameters
+        ----------
+        Returns
+        ----------
+        """
+        graph = v1.get_default_graph()
+        return graph
 
     def network(self):
         """

@@ -720,7 +720,7 @@ class RecdataRecognize(object):
 
     # TODO：函数拆分
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
-    # TODO：增加矫正功能
+    # TODO：矫正中PCA部分会出现division by zero，执行操作前检查数量
     @staticmethod
     def recognize(img, img_name, recs_xy_list, recs_classes_list, joint_img_dir=cfg.joint_img_dir):
         """
@@ -745,14 +745,15 @@ class RecdataRecognize(object):
         ) # 排序所有rec，按y从小到大顺序，对两列同样有效
         recs_classes_set = set(recs_classes_list)
 
-        joint_data = {}
         # 拼接编号rec图片
+        joint_data = {}
         for classes in recs_classes_set:
             assert classes in ('编号', '铭牌'), f'classes不能为{classes}'
             recs_same_classes = [rec for rec in recs_list if rec.classes == classes]
             # TODO：英文classes
             classes = 'number' if classes == '编号' else 'plate'
             if classes == 'number':
+                # TODO：考虑检测结果不足以矫正情况
                 # 矫正
                 recs_xy_list = [rec.xy_list for rec in recs_same_classes]
                 recs_shape_data = Correction.correct_rec(recs_xy_list)
