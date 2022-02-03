@@ -66,9 +66,9 @@ class Terminal(BaseModel):
     端子表
     """
     terminal_id = FixedCharField()
-    loop_number = CharField() # 端子连接回路编号
+    loop_number = CharField()                                                           # 端子连接回路编号
 
-    def loop_number(query_terminal_id):
+    def get_loop_number(query_terminal_id):
         loop_number = Terminal.get(Terminal.terminal_id == query_terminal_id).loop_number
         return loop_number
 

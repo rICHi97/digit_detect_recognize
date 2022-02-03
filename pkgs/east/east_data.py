@@ -640,11 +640,9 @@ class EastData(object):
                                 total_score[3] += score
                                 recs_xy_list[g_th, 0] += score * p_v[0]
                                 recs_xy_list[g_th, 3] += score * p_v[1]
-                            # 第g_th个rec的首或尾加上该像素得分*该像素判断首尾坐标
-                            # recs_xy_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
             classes_score /= cnt
             # TODO：设为函数参数，是否考虑加一类不确定
-            recs_classes_list.append('编号' if classes_score < 0.5 else '铭牌')
+            recs_classes_list.append('terminal' if classes_score < 0.5 else 'plate')
             score_list[g_th] = total_score[:, 0]
             # recs_xy_list = (第i个像素score * 第i个像素p_v) / total_score
             recs_xy_list[g_th] = recs_xy_list[g_th] / (total_score + cfg.epsilon)

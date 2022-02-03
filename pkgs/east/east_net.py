@@ -235,8 +235,8 @@ class EastNet(object):
             img_paths = [path.join(img_dir_or_path, img_file) for img_file in img_files]
         else:
             img_paths = [img_dir_or_path]
+            
         imgs_recs_xy_list, imgs_recs_classes_list = [], []
-
         for img_path in img_paths:
 
             img = preprocessing.image.load_img(img_path).convert('RGB')

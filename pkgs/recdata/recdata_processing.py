@@ -92,21 +92,6 @@ class Recdata(object):
     """
     从rec四点坐标得到rec data，如边长度、中心坐标
     """
-
-    # TODO：好像没法用，对每个rec求data时，data_func的参数无法确定
-    # @staticmethod
-    # def get_multi_recs_data(recs_xy_list, data_func, **func_args):
-    #     """
-    #     得到多个rec的data
-    #     Parameters
-    #     ----------
-    #     recs_xy_list：多个rec的四点坐标
-    #     data_func：得到每个rec的data的函数
-
-    #     Returns
-    #     ----------
-    #     recs_data_list: 多个rec的data的list
-    #     """
     @staticmethod
     def get_avg_rec_data(recs_data_list, is_rotate_angle=False):
         """
@@ -236,7 +221,6 @@ class Recdata(object):
         vector_center = vector_centers[edge_vector]
 
         return vector_center
-
 
     @staticmethod
     def get_rec_shape_data(
@@ -392,7 +376,6 @@ class RecdataProcess(object):
     """
     对rec数据进行处理，包括重排点顺序，统一边长度
     """
-
     # TODO:重复的reshape可能有性能损失，暂不考虑
     @staticmethod
     def from_18_to_42(xy_list):
@@ -721,9 +704,11 @@ class RecdataRecognize(object):
     # TODO：函数拆分
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
     # TODO：矫正中PCA部分会出现division by zero，执行操作前检查数量
+    # TODO：应该返回所有predict的rec，而不仅仅是recognize的rec，识别失败的rec标注上未识别
     @staticmethod
     def recognize(img, img_name, recs_xy_list, recs_classes_list, joint_img_dir=cfg.joint_img_dir):
         """
+        依据east的predict结果，先拼接图片，再识别
         Parameters
         ----------
         img：PIL.Image或img_path
@@ -740,6 +725,7 @@ class RecdataRecognize(object):
         ImageProcess = image_processing.ImageProcess
         Correction = recdata_correcting.Correction
 
+        # TODO：重排顺序放在east的predict函数中
         recs_list = RecdataProcess.reorder_recs(
             [Rec(xy_list, classes) for xy_list, classes in zip(recs_xy_list, recs_classes_list)]
         ) # 排序所有rec，按y从小到大顺序，对两列同样有效
@@ -748,17 +734,14 @@ class RecdataRecognize(object):
         # 拼接编号rec图片
         joint_data = {}
         for classes in recs_classes_set:
-            assert classes in ('编号', '铭牌'), f'classes不能为{classes}'
+            assert classes in ('terminal', 'plate'), f'classes不能为{classes}'
             recs_same_classes = [rec for rec in recs_list if rec.classes == classes]
-            # TODO：英文classes
-            classes = 'number' if classes == '编号' else 'plate'
-            if classes == 'number':
+            if classes == 'terminal':
                 # TODO：考虑检测结果不足以矫正情况
-                # 矫正
                 recs_xy_list = [rec.xy_list for rec in recs_same_classes]
-                recs_shape_data = Correction.correct_rec(recs_xy_list)
+                recs_shape_data = Correction.correct_rec(recs_xy_list) # 矫正
                 recs_xy_list = [
-                    Recdata.get_text_area(Recdata.get_xy_list(rec_shape_data))
+                    Recdata.get_text_area(Recdata.get_xy_list(rec_shape_data)) # 中心文本区域
                     for rec_shape_data in recs_shape_data
                 ]
             else:
@@ -778,7 +761,7 @@ class RecdataRecognize(object):
                 break
             file_joint_data = joint_data[file] # 某一张拼接图片的joint_data
 
-            if classes == 'number':
+            if classes == 'terminal':
                 chars, locations = [], []
                 for word_result in words_result:
                     chars += [_['char'] for _ in word_result['chars']]
@@ -826,3 +809,27 @@ class RecdataRecognize(object):
                 recognize_recs_list.append(rec)
 
         return recognize_recs_list
+
+# TODO：rec需要排序
+# TODO：通过plate分组，似乎pca分组没有必要了。检查发现还是有必要的，有些同一个安装单位中的端子分布不一致
+def plate_group(recs_list):
+    """
+    依据位置关系，将端子分在各组中
+    情况1.第一个就是铭牌
+    Parameters
+    ----------
+    Returns
+    ----------
+    """
+    # TODO：考虑不能确定类别的情况
+    group_list = [] # list的第一个元素是铭牌
+    tmp_list = []
+    for i, rec in enumerate(recs_list):
+        assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
+        if rec.classes == 'plate': # 不确定的rec不能新开组
+            if not bool(tmp_list): # 如果是空集，当前rec是当前组第一个，group不append空的tmp_list
+                group_list.append(tmp_list.copy())
+                tmp_list.clear()
+        tmp_list.append(rec)
+
+    
