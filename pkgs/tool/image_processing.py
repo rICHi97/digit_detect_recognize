@@ -16,11 +16,11 @@ from PIL import Image
 from shapely import geometry
 
 from . import cfg
-from ..recdata import recdata_processing
+from ..recdata import rec, recdata_processing
 
 Polygon = geometry.Polygon
 
-Rec = recdata_processing.Rec
+Rec = rec.Rec
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 
@@ -116,12 +116,12 @@ class ImageProcess(object):
         return img_rec
 
     # TODO：裁切铭牌无效
+    # 2/4，传递数据使用recs_list，之前的似乎有问题，每个plate直接return，计数cnt始终等于0
     @staticmethod
     def joint_rec(
         img,
         img_name,
-        recs_xy_list,
-        classes,
+        recs_list,
         max_joint_img_width=cfg.max_joint_img_width,
         joint_img_height=cfg.joint_img_height,
         img_rec_height=cfg.img_rec_height,
@@ -130,6 +130,7 @@ class ImageProcess(object):
     ):
         """
         拼接多个rec为一张或多张图片
+        对于一张图片中的所有recs，如果为plate，就直接裁切；如果为terminal，就拼接
         Parameters
         ----------
         img：PIL.Image或img_path
@@ -152,49 +153,43 @@ class ImageProcess(object):
         if not path.exists(this_joint_img_dir):
             os.mkdir(this_joint_img_dir)
 
-        cnt = 0
-        joint_img_name = f'{classes}_{cnt}.jpg'
-        joint_data, img_rec_list = {joint_img_name: []}, []
-        # TODO：这个循环里直接paste rec
-        for xy_list  in recs_xy_list:
-            img_rec = ImageProcess.crop_rec(img, xy_list)
-            assert not img_rec.width * img_rec.height == 0, (f'{xy_list}裁切宽高应大于0')
-            if classes == 'plate':
-                rec = Rec(xy_list=xy_list, classes=classes)
-                joint_data[joint_img_name].append(rec)
-                joint_img_path = path.join(this_joint_img_dir, joint_img_name)
-                img_rec.save(joint_img_path)
-                return joint_data
-            img_rec = img_rec.resize(
-                (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
-            )
-            img_rec_list.append(img_rec)
-        assert len(img_rec_list) == len(recs_xy_list), '有rec裁切失败'
-
+        terminal_cnt, plate_cnt = 0, 0
+        joint_data = {}
+        # 仅terminal需要joint
         joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
         available_width = max_joint_img_width
         paste_x, paste_y = 0, int((joint_img_height - img_rec_height) / 2)
-        for i, img_rec in enumerate(img_rec_list):
-            img_rec = ImageProcess.preprocess_img(img_rec)
-            if available_width < spacing + img_rec.width:
-                joint_img_path = path.join(this_joint_img_dir, joint_img_name)
-                joint_img.save(joint_img_path)
-                cnt += 1
-                joint_img_name = f'{classes}_{cnt}.jpg'
-                joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
-                joint_data[joint_img_name] = []
-                available_width = max_joint_img_width
-                paste_x = 0
-            joint_img.paste(img_rec, (paste_x, paste_y))
-            rec = Rec(xy_list=recs_xy_list[i], classes=classes)
-            rec.set_attr(
-                joint_img_name=joint_img_name, joint_x_position=(paste_x, paste_x + img_rec.width)
-            )
-            joint_data[joint_img_name].append(rec)
-            paste_x += spacing + img_rec.width
-            available_width -= spacing + img_rec.width
-        joint_img_path = path.join(this_joint_img_dir, joint_img_name)
-        joint_img.save(joint_img_path)
+
+        for rec in recs_list:
+
+            img_rec = ImageProcess.crop_rec(img, rec.xy_list)
+            assert not img_rec.width * img_rec.height == 0, (f'{xy_list}裁切宽高应大于0')
+
+            if rec.classes == 'plate':
+                img_rec.save(path.join(this_joint_img_dir, f'plate_{plate_cnt}.jpg'))
+                joint_data[f'plate_{plate_cnt}.jpg'] = [rec] 
+                plate_cnt += 1
+
+            elif rec.classes == 'terminal':
+                # 仅terminal需要resize拼接
+                img_rec = img_rec.resize(
+                    (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
+                )
+                # 当前背景图片可用空间不够，保存并新建
+                if available_width < spacing + img_rec.width:
+                    joint_img.save(path.join(this_joint_img_dir, f'terminal_{terminal_cnt}.jpg'))
+                    terminal_cnt += 1
+                    joint_img = Image.new('RGB', (max_joint_img_width, joint_img_height), 'white')
+                    available_width = max_joint_img_width
+                    paste_x = 0
+                rec.set_attr(joint_x_position=(paste_x, paste_x + img_rec.width))
+                joint_img.paste(img_rec, (paste_x, paste_y))
+                if f'terminal_{terminal_cnt}.jpg' not in joint_data.keys():
+                    joint_data[f'terminal_{terminal_cnt}.jpg'] = [rec]
+                else:
+                    joint_data[f'terminal_{terminal_cnt}.jpg'].append(rec)
+
+            joint_img.save(path.join(this_joint_img_dir, f'terminal_{terminal_cnt}.jpg'))
 
         return joint_data
 

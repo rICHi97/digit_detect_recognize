@@ -24,16 +24,19 @@ import requests
 
 import numpy as np
 
-from . import cfg
+from . import cfg, rec
 
-_api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
-_secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
-_digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
-_character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
-_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
+Rec = rec.Rec
+
+EPSILON = 1e-4
+
 # TODO：token会变化吗？
 _access_token = None
-EPSILON = 1e-4
+_api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
+_character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
+_digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
+_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
+_secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
 
 def _get_vector(length, rotate_angle):
 
@@ -54,46 +57,12 @@ def _get_vector_rotate_angle(vector):
     return rotate_angle
 
 
-# TODO：Rec和Recdata可以整合
-class Rec(object):
-
-    def __init__(self, xy_list, classes, text=None, joint_img_name=None, joint_x_position=None):
-        self.xy_list = xy_list
-        self.classes = classes
-        self.text = text
-        self.joint_img_name = joint_img_name
-        self.joint_x_position = joint_x_position
-
-    def set_attr(self, **attrs):
-        """
-        Parameters
-        ----------
-
-        Returns
-        ----------
-        """
-        for key, value in attrs.items():
-            assert key in ('xy_list', 'classes', 'text', 'joint_img_name', 'joint_x_position'), (
-                f'不存在属性{key}'
-            )
-            if key == 'xy_list':
-                self.xy_list = value
-            elif key == 'classes':
-                self.classes = value
-            elif key == 'text':
-                self.text = value
-            elif key == 'joint_img_name':
-                self.joint_img_name = value
-            elif key == 'joint_x_position':
-                self.joint_x_position = value
-
-
 class Recdata(object):
     """
     从rec四点坐标得到rec data，如边长度、中心坐标
     """
     @staticmethod
-    def get_avg_rec_data(recs_data_list, is_rotate_angle=False):
+    def get_avg_rec_data(recs_data_list, is_rotate_angle)
         """
         对多个端子的rec_data求平均
         单独计算data > 0的平均和data < 0的平均，最终符号以计数较多的为准
@@ -332,7 +301,8 @@ class Recdata(object):
         """
         pass
 
-    # TODO:测试shrink方法效果    @staticmethod
+    # TODO:测试shrink方法效果
+    @staticmethod
     def get_text_area(
         xy_list,
         W_coef=cfg.W_coef,
@@ -507,28 +477,26 @@ class RecdataProcess(object):
 
         return reorder_xy_list
 
+    # TODO：对于特别倾斜的端子排可以会出现问题，比如右边一列的第二个在左边的上面
+    # TODO：nms中pixel_size = 4，可能同一个y pixel上有多个x pixel；考虑x排序
     @staticmethod
-    def reorder_recs(recs_xy_list, order='ascending'):
+    def reorder_recs(recs_list, order='ascending'):
         """
         先计算所有recs的中心坐标，然后先按y的顺序排
         基本上就是按y的顺序排，相同的y几乎不可能
-        nms中pixel_size = 4，可能同一个y pixel上有多个x pixel
-        对于特别倾斜的端子排可以会出现问题，比如右边一列的第二个在左边的上面
         Parameters
         ----------
-        recs_xy_list：多个rec的四点坐标或多个Rec实例，Rec实例有属性xy_list, text, classes
+        recs_list：多个Rec实例，Rec实例有属性xy_list, text, classes
 
         Returns
         ----------
         """
         orders = ('ascending', 'descending', 'random')
         assert order in orders, f'order must in {orders}'
-        assert isinstance(recs_xy_list[0], (list, np.ndarray, Rec)), 'recs_xy_list元素不合要求'
-        is_rec = bool(isinstance(recs_xy_list[0], Rec))
+        assert isinstance(recs_list[0], Rec), 'rec_list元素不合要求'
 
-        def center_y(xy_list_or_rec):
-            nonlocal is_rec
-            xy_list = xy_list_or_rec.xy_list if is_rec else xy_list_or_rec
+        def center_y(rec):
+            xy_list = rec.xy_list
             center_y = Recdata.get_rec_shape_data(
                 xy_list=xy_list,
                 center=True,
@@ -540,12 +508,11 @@ class RecdataProcess(object):
 
             return center_y
 
-
         if not order == 'random':
             # sorted
             reverse = bool(order == 'descending')
             # ordered_recs = sorted(recs_xy_list, key=center_y, reverse=reverse)
-            recs_xy_list.sort(key=center_y, reverse=reverse)
+            recs_list.sort(key=center_y, reverse=reverse)
         else:
             # TODO：randomlized
             pass
@@ -705,15 +672,15 @@ class RecdataRecognize(object):
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
     # TODO：矫正中PCA部分会出现division by zero，执行操作前检查数量
     # TODO：应该返回所有predict的rec，而不仅仅是recognize的rec，识别失败的rec标注上未识别
+    # 2/4，将传参的recs_xy_list和recs_classes_list改为recs_list
     @staticmethod
-    def recognize(img, img_name, recs_xy_list, recs_classes_list, joint_img_dir=cfg.joint_img_dir):
+    def recognize(img, img_name, recs_list, joint_img_dir=cfg.joint_img_dir):
         """
         依据east的predict结果，先拼接图片，再识别
         Parameters
         ----------
         img：PIL.Image或img_path
-        recs_xy_list：多个rec的四点坐标
-        recs_classes_list：多个rec的类别信息
+        recs_list：多个Rec实例
         joint_img_dir：输出joint_img文件夹，需要结合img_name遍历文件识别
 
         Returns
@@ -726,30 +693,21 @@ class RecdataRecognize(object):
         Correction = recdata_correcting.Correction
 
         # TODO：重排顺序放在east的predict函数中
-        recs_list = RecdataProcess.reorder_recs(
-            [Rec(xy_list, classes) for xy_list, classes in zip(recs_xy_list, recs_classes_list)]
-        ) # 排序所有rec，按y从小到大顺序，对两列同样有效
-        recs_classes_set = set(recs_classes_list)
-
-        # 拼接编号rec图片
-        joint_data = {}
-        for classes in recs_classes_set:
-            assert classes in ('terminal', 'plate'), f'classes不能为{classes}'
-            recs_same_classes = [rec for rec in recs_list if rec.classes == classes]
-            if classes == 'terminal':
-                # TODO：考虑检测结果不足以矫正情况
-                recs_xy_list = [rec.xy_list for rec in recs_same_classes]
-                recs_shape_data = Correction.correct_rec(recs_xy_list) # 矫正
-                recs_xy_list = [
-                    Recdata.get_text_area(Recdata.get_xy_list(rec_shape_data)) # 中心文本区域
-                    for rec_shape_data in recs_shape_data
-                ]
-            else:
-                recs_xy_list = [rec.xy_list for rec in recs_same_classes]
-            this_joint_data = ImageProcess.joint_rec(
-                img, img_name, recs_xy_list, classes, joint_img_dir=joint_img_dir
-            )
-            joint_data.update(this_joint_data)
+        # 2/4修改
+        # 分类，纠正端子后，拼接图片
+        recs_list = RecdataProcess.reorder_recs(recs_list)
+        plates = [rec for rec in recs_list if rec.classes == 'plate']
+        terminals = [rec for rec in recs_list if rec.classes == 'terminal']
+        # 纠正xy_list
+        terminals_xy_list = [rec.xy_list for rec in terminals]
+        corrected_shape_datas = Correction.correct_rec(terminals_xy_list)
+        corrected_terminals = []
+        for shape_data in corrected_shape_datas:
+            xy_list = Recdata.get_xy_list(shape_data)
+            terminal_num_xy_list = Recdata.get_text_area(xy_list) # 中心编号部分坐标
+            corrected_terminals.append(Rec(xy_list=terminal_num_xy_list, classes='terminal'))
+        recs_list = plates + terminals
+        joint_data = ImageProcess.joint_rec(recs_list)
 
         recognize_recs_list = []
         this_joint_img_dir = path.join(joint_img_dir, img_name)
@@ -831,5 +789,7 @@ def plate_group(recs_list):
                 group_list.append(tmp_list.copy())
                 tmp_list.clear()
         tmp_list.append(rec)
+
+    return group_list
 
     

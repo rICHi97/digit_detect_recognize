@@ -30,6 +30,7 @@ class EndToEnd(object):
     端到端，实现检测及识别，输出txt结果，绘制结果img
     """
     def __init__(self):
+        # clear_session以避免图错误
         backend.clear_session()
         self.east = EastNet()
 
@@ -64,8 +65,8 @@ class EndToEnd(object):
         """
         img = Image.open(img_path)
         img_name = path.basename(img_path)
-        _ = self.east.predict(img_dir_or_path=img_path)
-        recs_xy_list, recs_classes_list = _[0][0], _[1][0]
+        recs_list = self.east.predict(img_dir_or_path=img_path)
+        recs_xy_list, recs_classes_list = recs_list[0][0], recs_list[1][0]
 
         # 不包括识别信息
         # for i, xy_list in enumerate(recs_xy_list):

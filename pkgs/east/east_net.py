@@ -19,6 +19,7 @@ from tensorflow.compat import v1  #pylint: disable=E0401
 
 from . import cfg
 from . import east_data
+from ..recdata import rec
 
 VGG16 = applications.vgg16.VGG16
 preprocess_input = applications.vgg16.preprocess_input
@@ -34,7 +35,7 @@ logging = v1.logging
 Session = v1.Session
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
-
+Rec = rec.Rec
 
 def _init_environ():
 
@@ -166,7 +167,6 @@ class EastNet(object):
         """
         Parameters
         ----------
-
         Returns
         ----------
         """
@@ -200,7 +200,8 @@ class EastNet(object):
     # TODO：对于尺寸较大的图片，先裁切再predict
     # TODO：terminal_23识别有问题
     # TODO：num_img封装图片为batch检测，研究keras文档api调用说明
-        # TODO：支持output txt
+    # TODO：支持output txt
+    # 2/4修改，输出Rec实例形式
     def predict(
         self,
         east_weights_filepath=cfg.east_weights_filepath,
@@ -236,7 +237,8 @@ class EastNet(object):
         else:
             img_paths = [img_dir_or_path]
             
-        imgs_recs_xy_list, imgs_recs_classes_list = [], []
+        imgs_recs_list, recs_list = [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
+        
         for img_path in img_paths:
 
             img = preprocessing.image.load_img(img_path).convert('RGB')
@@ -256,23 +258,24 @@ class EastNet(object):
             condition = np.greater_equal(y[:, :, 0], pixel_threshold)
             activation_pixels = np.asarray(condition).nonzero()
             # 12/4：nms中已经修改，以适应predict tensor shape
+            # 这张图片对应的所有rec的置信度得分，xy_list，classes
             recs_score, recs_after_nms, recs_classes_list = EastData.nms(
                 y, activation_pixels, return_classes=True
             )
 
-            recs_xy_list = []
-            for score, rec in zip(recs_score, recs_after_nms):
+            for i, _ in enumerate(zip(recs_score, recs_after_nms)):
+                score, xy_list = _[0], _[1]
                 if np.amin(score) > 0:
-                    rec = np.reshape(rec, (4, 2))
-                    rec[:, 0] *= scale_ratio_w
-                    rec[:, 1] *= scale_ratio_h
-                    rec = np.reshape(rec, (8,)).tolist()
-                    recs_xy_list.append(rec)
+                    xy_list = np.reshape(xy_list, (4, 2))
+                    xy_list[:, 0] *= scale_ratio_w
+                    xy_list[:, 1] *= scale_ratio_h
+                    xy_list = np.reshape(xy_list, (8,)).tolist()
+                    rec = Rec(xy_list=xy_list, classes=recs_classes_list[i])                                                                                                                                                                                                                                                                                                                                                       
+                    recs_list.append(rec)
 
-            imgs_recs_xy_list.append(recs_xy_list)
-            imgs_recs_classes_list.append(recs_classes_list)
+            imgs_recs_list.append(recs_list)
 
-        return imgs_recs_xy_list, imgs_recs_classes_list
+        return imgs_recs_list
 
 
 
