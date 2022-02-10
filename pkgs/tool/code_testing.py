@@ -12,13 +12,14 @@ from PIL import Image
 from . import cfg, image_processing, visualization
 from .. import detect_recognize
 from ..east import east_data
-from ..recdata import recdata_correcting, recdata_io, recdata_processing
+from ..recdata import rec, recdata_correcting, recdata_io, recdata_processing
 
 PCA = recdata_correcting.PCA
 ImageProcess = image_processing.ImageProcess
 RecDraw = visualization.RecDraw
 EndToEnd = detect_recognize.EndToEnd
 EastPreprocess = east_data.EastPreprocess
+Rec = rec.Rec
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 RecdataIO = recdata_io.RecdataIO
@@ -120,12 +121,16 @@ class CodeTest(object):
         Returns
         ----------
         """
-        img = _get_img(img_path)
+        # img = _get_img(img_path)
         img_name = path.basename(img_path)[:-4]
         recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(
             recs_txt_path, return_classes_list=True
         )
-        recdata = RecdataRecognize.recognize(img, img_name, recs_xy_list, recs_classes_list)
+        recs_list = []
+        for i in range(len(recs_xy_list)):
+            rec = Rec(xy_list=recs_xy_list[i], classes=recs_classes_list[i])
+            recs_list.append(rec)
+        recdata = RecdataRecognize.recognize(img_name, recs_list)
 
         return recdata
 

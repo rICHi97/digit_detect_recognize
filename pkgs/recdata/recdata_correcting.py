@@ -581,3 +581,18 @@ class Correction(object):
                     corrected_recs_shape_data[index_] = shape_data
 
         return corrected_recs_shape_data
+
+    # TODO：和上述函数整合
+    @staticmethod
+    def correct_plate_text(plate_text):
+        """
+        编码当前计量柜安装单位铭牌，
+        求plate_text与所有铭牌的cos距离
+        Parameters
+        ----------
+        
+        Returns
+        corrected_plate_text：
+        ----------
+        """
+        pass

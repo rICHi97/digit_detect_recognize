@@ -66,9 +66,9 @@ class EndToEnd(object):
         img = Image.open(img_path)
         img_name = path.basename(img_path)
         recs_list = self.east.predict(img_dir_or_path=img_path)
-        recs_xy_list, recs_classes_list = recs_list[0][0], recs_list[1][0]
 
         # 不包括识别信息
+        # recs_xy_list, recs_classes_list = recs_list[0][0], recs_list[1][0]
         # for i, xy_list in enumerate(recs_xy_list):
         #     RecDraw.draw_rec(xy_list, img)
         #     RecDraw.draw_text(recs_classes_list[i], xy_list, img)

@@ -13,6 +13,6 @@ excel_paths = {
 database_path = './resource/database/on-site_inspection.db'
 pragmas = {
 	'journal_mode': 'wal',
-	'foreign_keys': 1,
+	'foreign_keys': 1, # 开启外码
 	'ignore_check_constraints': 0,
 }

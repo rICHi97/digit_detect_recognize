@@ -35,8 +35,8 @@ _access_token = None
 _api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
 _character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
 _digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
-_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
 _secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
+_host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
 
 def _get_vector(length, rotate_angle):
 
@@ -62,7 +62,7 @@ class Recdata(object):
     从rec四点坐标得到rec data，如边长度、中心坐标
     """
     @staticmethod
-    def get_avg_rec_data(recs_data_list, is_rotate_angle)
+    def get_avg_rec_data(recs_data_list, is_rotate_angle):
         """
         对多个端子的rec_data求平均
         单独计算data > 0的平均和data < 0的平均，最终符号以计数较多的为准
@@ -519,6 +519,39 @@ class RecdataProcess(object):
 
         return recs_xy_list
 
+    # TODO：rec需要排序,recogniz中是否已经重排过了
+    # TODO：通过plate分组，似乎pca分组没有必要了。检查发现还是有必要的，有些同一个安装单位中的端子分布不一致
+    @staticmethod
+    def plate_group(recs_list):
+        """
+        依据位置关系，将端子分在各组中。假定顺序已经重排过了
+        情况1，有铭牌：
+        情况2，无铭牌：
+
+        Parameters
+        ----------
+        Returns
+        ----------
+        """
+        # TODO：考虑不能确定类别的情况
+        group_list = [] # list的第一个元素是铭牌
+        tmp_list = []
+        plate_text = '无铭牌'
+        for i, rec in enumerate(recs_list):
+            assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
+            # 遇到plate新建一组
+            if rec.classes == 'plate': # 不确定的rec不能新开组
+                plate_text = rec.text
+                group_list.append(tmp_list.copy())
+                tmp_list.clear()
+            # 未遇到plate
+            rec.set_attr(plate_text=plate_text)
+            tmp_list.append(rec)
+        # 当plate是第一个时，group_list append了空tmp_list
+        group_list = [group for group in group_list if bool(group)]
+        
+        return group_list
+        
     # TODO：单纯统一长度似乎没有必要
     @staticmethod
     def uniform_rec_edge_length(edge1, edge2):
@@ -674,12 +707,11 @@ class RecdataRecognize(object):
     # TODO：应该返回所有predict的rec，而不仅仅是recognize的rec，识别失败的rec标注上未识别
     # 2/4，将传参的recs_xy_list和recs_classes_list改为recs_list
     @staticmethod
-    def recognize(img, img_name, recs_list, joint_img_dir=cfg.joint_img_dir):
+    def recognize(img_name, recs_list, joint_img_dir=cfg.joint_img_dir):
         """
         依据east的predict结果，先拼接图片，再识别
         Parameters
         ----------
-        img：PIL.Image或img_path
         recs_list：多个Rec实例
         joint_img_dir：输出joint_img文件夹，需要结合img_name遍历文件识别
 
@@ -692,7 +724,7 @@ class RecdataRecognize(object):
         ImageProcess = image_processing.ImageProcess
         Correction = recdata_correcting.Correction
 
-        # TODO：重排顺序放在east的predict函数中
+        # TODO：重排顺序放在east的predict函数中，重排顺序原因是PCA矫正中依赖顺序
         # 2/4修改
         # 分类，纠正端子后，拼接图片
         recs_list = RecdataProcess.reorder_recs(recs_list)
@@ -728,7 +760,7 @@ class RecdataRecognize(object):
                         int(_['location']['left'] + _['location']['width'] / 2)
                         for _ in word_result['chars']
                     ]
-                # TODO：优化，去除已识别的location。只是大小比较，速度很快，暂不优化
+                # 主要是大小比较速度快
                 for i, rec in enumerate(file_joint_data):
                     # TODO：考虑只有一个rec的极端情况
                     if i == 0:
@@ -766,30 +798,4 @@ class RecdataRecognize(object):
                 rec.text = text
                 recognize_recs_list.append(rec)
 
-        return recognize_recs_list
-
-# TODO：rec需要排序
-# TODO：通过plate分组，似乎pca分组没有必要了。检查发现还是有必要的，有些同一个安装单位中的端子分布不一致
-def plate_group(recs_list):
-    """
-    依据位置关系，将端子分在各组中
-    情况1.第一个就是铭牌
-    Parameters
-    ----------
-    Returns
-    ----------
-    """
-    # TODO：考虑不能确定类别的情况
-    group_list = [] # list的第一个元素是铭牌
-    tmp_list = []
-    for i, rec in enumerate(recs_list):
-        assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
-        if rec.classes == 'plate': # 不确定的rec不能新开组
-            if not bool(tmp_list): # 如果是空集，当前rec是当前组第一个，group不append空的tmp_list
-                group_list.append(tmp_list.copy())
-                tmp_list.clear()
-        tmp_list.append(rec)
-
-    return group_list
-
-    
+        return recognize_recs_list   
