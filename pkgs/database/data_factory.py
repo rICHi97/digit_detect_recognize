@@ -3,7 +3,7 @@
 Created on 2022-01-30 15:52:53
 
 @author: Li Zhi
-在recdata模块，excel_db模块之间加工数据以符合要求
+在recdata模块，excel_db模块，my_database之间加工数据以符合要求
 """
 import pandas as pd
 
@@ -13,7 +13,9 @@ excel_types = cfg.excel_types
 
 
 class DataFactory():
-
+    """
+    主要处理数据本身
+    """
     # TODO：整型id是否能加快速度？
     @staticmethod
     def normalize_cubicle_id(excel_cubicle_id):
@@ -43,7 +45,6 @@ class DataFactory():
         else:
             type_ = '02' # 分体仪表
         voltage_class = e[truncate_index:-4]
-        print(voltage_class)
         assert len(voltage_class) in (2, 3), '计量柜编号电压等级有误' # 2位或3位，35/06/038/010
         if len(voltage_class) == 2:
             # 转为10V单位，06(kV) -> 600(10V)，35(kV) -> 3500(10V)
@@ -60,54 +61,146 @@ class DataFactory():
 
         return normative_cubicle_id
 
-#    @staticmethod
-#     def terminal_info_to_id(cibucle_num, install_unit_num, terminal_num):
-#         """
-#         Parameters
-#         ----------
-#         cibucle_num：
-#         install_unit_num：安装单位号，1-2位
-#         terminal_num：端子编号，1-3位
+    @staticmethod
+    def get_terminal_id(cubicle_id, install_unit_id, terminal_num):
+        """
+        Parameters
+        ----------
+        cubicle_id：规范化后的计量柜id
+        install_unit_num：安装单位号，1-2位
+        terminal_num：端子编号，1-3位
 
-#         Returns
-#         ----------
-#         terminal_id：
-#         """
-#         c, i, t = str(cibucle_num), str(install_unit_num), str(terminal_num)
-#         # 安装单位号，右对齐，左侧补0，宽2位
-#         i_num = f'{i:0>2}'
-#         # 端子编号，右对齐，左侧补0，宽3位
-#         t_num = f'{t:0>3}'
-#         terminal_id = f'{c_num}{i_num}{t_num}'
+        Returns
+        ----------
+        terminal_id：
+        """
+        c, i, t = str(cubicle_id), str(install_unit_id), str(terminal_num)
+        # 安装单位号，右对齐，左侧补0，宽2位
+        i = f'{i:0>2}'
+        # 端子编号，右对齐，左侧补0，宽3位
+        t = f'{t:0>3}'
+        terminal_id = f'{c}{i}{t}'
 
-#         return terminal_id
+        return terminal_id
+
+    @staticmethod
+    def normalize(row, excel_type):
+        """
+        规范标准化原始表格的数据，作为表格和数据库之间的中介
+        Parameters
+        ----------
+        Returns
+        ----------
+        s：Series
+            端子信息：pd.Series([cubicle_id, plate_text, terminal_num, loop_num])
+        """
+        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
+        column_names = cfg.excel_column_names
+        if excel_type == '端子信息':
+            column_name = column_names['cubicle_id']
+            cubicle_id = row[column_name]
+            n_cubicle_id = DataFactory.normalize_cubicle_id(cubicle_id)
+            d = {'cubicle_id': n_cubicle_id}
+            keys = ['plate_text', 'terminal_num', 'loop_num']
+        elif excel_type == '检测任务':
+            keys = []
+        elif excel_type == '人员信息':
+            keys = []
+
+        for key in keys:
+            column_name = column_names[key]
+            d[key] = row[column_name]
+
+        s = pd.Series(d)
+
+        return s
+
+    @staticmethod
+    def create_data(n_df, excel_type):
+        """
+        创建直接用于插入数据库的数据。
+        难点是data需要和插入数据中Field顺序一致
+        Parameters
+        ----------
+        n_df：规范标准化后的表格df
+
+        Returns
+        ----------
+        model_data_dict：
+            dict，key = model_type，value = [(fields_data)]
+        """
+        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
+        model_data_dict = {}
+
+        if excel_type == '端子信息':
+
+            temp_connections = []
+            cubicles, install_units, terminals, loops, connections = [], [], [], [], []
+
+            c_ids = n_df['cubicle_id'].unique() # 多条数据指向同一个计量柜
+            for c_id in c_ids:
+                # 计量柜
+                c_data = (c_id, ) # C.id_
+                cubicles.append(c_data)
+
+                # 多条数据指向同一个计量柜中的同一个安装单位
+                conditon = (n_df['cubicle_id'] == c_id)
+                p_texts = n_df[conditon]['plate_text'].unique()
+                # 手动设置主键为i，即数据次序，方便设置外键
+                for i, p_text in enumerate(p_texts):
+                    i_data = (i, p_text, c_id) # I.id_, I.p_text, I.c_id，通过id连接外键
+                    install_units.append(i_data)
+
+                    # 多条数据指向同一个计量柜中的同一个安装单位中的同一个端子
+                    conditon = (n_df['cubicle_id'] == c_id) & (n_df['plate_text'] == p_text)
+                    t_nums = n_df[conditon]['terminal_num'].unique()
+                    for t_num in t_nums:
+                        t_num = int(t_num)
+                        t_id = DataFactory.get_terminal_id(c_id, i, t_num)
+                        t_data = (t_id, t_num, i) # T.id_, T.num, T.i_id
+                        terminals.append(t_data)
+
+                        # 查询这个端子对应的连接回路
+                        conditon = (conditon) & (n_df['terminal_num'] == t_num)
+                        connected_loop_nums = n_df[conditon]['loop_num']
+                        for connected_loop_num in connected_loop_nums:
+                            # 存储端子id和回路文本
+                            connection = (t_id, connected_loop_num)
+                            temp_connections.append(connection)
+
+            # 端子连接回路是一个难点，因为是多对多
+            # 逐个检查连接，同时生成loops和connections
+            l_id, num2id = 0, {}
+            for i, connection in enumerate(temp_connections):
+                t_id, loop_num = connection[0], connection[1]
+
+                # 此时是一条新的回路
+                if loop_num not in num2id.keys():
+                    l_data = (l_id, loop_num) # L.id_, L.num
+                    loops.append(l_data)
+                    l_id += 1
+                    num2id[loop_num] = l_id
+
+                # 无论新老回路，这个连接都是连接表中的一条有效数据
+                # 不能直接插入l_id
+                # 举例：三条连接分别是回路1、2、1；第3条连接验证后，l_id是2，但该条连接回路1对应id应是1
+                # i是连接的次序作为主键，查询该条回路对应次序作为回路外键，该条连接中的t_id作为端子外键
+                # Connection.id, Connection.loop_id, Connection.terminal_id
+                connection_data = (i, num2id[loop_num], t_id)
+                connections.append(connection_data)
+
+            # 数据顺序不能颠倒，因为有外键关系
+            model_data_dict = {
+                'Cubicle': cubicles,
+                'InstallUnit': install_units,
+                'Terminal': terminals,
+                'Loop': loops,
+                'Connection': connections
+            }
+
+        return model_data_dict
 
 
-# TODO：row键名cfg参数化
-def normalize_excel(row, excel_type):
-    """
-    df_row -> dict，调用字典存入db
-    Parameters
-    ----------
-    Returns
-    ----------
-    s：Series
-        端子信息：pd.Series([cubicle_id, plate_text, terminal_num, loop_num])
-    """
-    assert excel_type in excel_types, f'excel_type不能为{excel_type}'
-    column_names = cfg.excel_column_names
-    if excel_type == '端子信息':
-        column_name = column_names['cubicle_id']
-        cubicle_id = row[column_name]
-        n_cubicle_id = DataFactory.normalize_cubicle_id(cubicle_id)
-        d = {'cubicle_id': n_cubicle_id}
-        keys = ['plate_text', 'terminal_num', 'loop_num']
 
-    for key in keys:
-        column_name = column_names[key]
-        d[key] = row[column_name]
 
-    s = pd.Series(d)
-
-    return s
 

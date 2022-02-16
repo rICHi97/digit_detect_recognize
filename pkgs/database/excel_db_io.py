@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import cfg, data_factory, my_database
 
-normalize_excel = data_factory.normalize_excel
+normalize = data_factory.DataFactory.normalize
 excel_paths = cfg.excel_paths
 # 区别于model_type，需要从一张excel中拆分出多个model
 _excel_types = cfg.excel_types
@@ -29,33 +29,19 @@ class Excel(object):
         with pd.ExcelFile(excel_path) as xlsx:
             # 默认表格只含1张sheet，第一行作为header，无index
             # 无需usecols参数，在后续加工中调用对应数据
-            self.df = pd.read_excel(xlsx)
+            self.df = pd.read_excel(xlsx).dropna(how='all')
             self.excel_type = excel_type
 
-def _excel2db(excel, excel_type):
+def _excel2db(excel, excel_type='端子信息'):
     assert excel_type in _excel_types, f'excel_type不能为{excel_type}'
     # TODO：pd的apply的func只接受df作为第一个参数？
     # excel -> normative_df -> model
     # normative_df规范统一表格数据格式
     normative_df = excel.df.apply(
-        normalize_excel,
+        normalize,
         axis=1,
         excel_type=excel_type,
     )
-
-    if excel_type == '端子信息':
-        cubicles = normative_df['cubicle_id'].unique()
-        # dict_ = {
-        #     cubicle: {
-        #         install_unit: {
-        #             terminal: {
-        #                 'loop'
-        #             }
-        #         }
-
-        #     }
-        # }
-        pass
 
     return normative_df
 
@@ -69,11 +55,12 @@ def excel2db():
     ----------
     """
     # TODO：清空指定位置的db文件
-    my_database.create_tables()
+    # my_database.create_tables()
     for excel_type in ('端子信息', ):
         excel = Excel(excel_paths[excel_type], excel_type)
-        _excel2db(excel, excel_type)
-    my_database.close_db()
+        n_df = _excel2db(excel, excel_type)
+    # my_database.close_db()
+    return n_df
 
 @staticmethod
 def db2excel(mdoel_type):

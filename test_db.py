@@ -6,6 +6,6 @@ Created on 2022-01-28 18:48:57
 """
 import time
 
-from pkgs.database import excel_db_io
+from pkgs.database import excel_db_io, my_database
 
-excel_db_io.excel2db()
+df = excel_db_io.excel2db()
