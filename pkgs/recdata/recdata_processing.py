@@ -57,6 +57,7 @@ def _get_vector_rotate_angle(vector):
     return rotate_angle
 
 
+# TODO：数据传递转为使用rec.Rec
 class Recdata(object):
     """
     从rec四点坐标得到rec data，如边长度、中心坐标
@@ -549,9 +550,9 @@ class RecdataProcess(object):
             tmp_list.append(rec)
         # 当plate是第一个时，group_list append了空tmp_list
         group_list = [group for group in group_list if bool(group)]
-        
+
         return group_list
-        
+
     # TODO：单纯统一长度似乎没有必要
     @staticmethod
     def uniform_rec_edge_length(edge1, edge2):
@@ -798,4 +799,4 @@ class RecdataRecognize(object):
                 rec.text = text
                 recognize_recs_list.append(rec)
 
-        return recognize_recs_list   
+        return recognize_recs_list

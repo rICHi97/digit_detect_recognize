@@ -56,7 +56,7 @@ class Task(BaseModel):
     """
     检测任务表
     """
-    id_ = IntegerField(primary_key=True, column_name='id') # 主码
+    id_ = IntegerField(primary_key=True) # 主码
     type_ = CharField(column_name='type') # 任务类型
     deliver_time = DateTimeField() # 任务下发时间
 
@@ -65,7 +65,7 @@ class Operator(BaseModel):
     """
     操作人员表
     """
-    id_ = IntegerField(primary_key=True, column_name='id') # 人员id
+    id_ = IntegerField(primary_key=True) # 人员id
     name = CharField()
     tel = IntegerField()
 
@@ -74,16 +74,16 @@ class Cubicle(BaseModel):
     """
     计量柜表
     """
-    id_ = FixedCharField(primary_key=True, column_name='id') # 计量柜型号规范化后作为主码id
+    id_ = FixedCharField(primary_key=True) # 计量柜型号规范化后作为主码id
 
 
 class InstallUnit(BaseModel):
     """
     安装单位表
     """
-    id_ = IntegerField(column_name='id') # 主码自增
+    id_ = IntegerField(primary_key=True) # 主码自增
     plate_text = CharField() # 安装单位铭牌文本
-    cubicle_id = ForeignKeyField(Cubicle, backref='install') # 计量柜id。同Terminal，1对多
+    cubicle = ForeignKeyField(Cubicle, backref='install') # 计量柜。同Terminal，1对多
 
 
 class Terminal(BaseModel):
@@ -91,17 +91,17 @@ class Terminal(BaseModel):
     端子表
     """
     # 端子id，由计量柜id + 安装单位id + 端子编号得到
-    id_ = FixedCharField(primary_key=True, column_name='id') 
+    id_ = FixedCharField(primary_key=True)
     num = IntegerField() # 端子编号
     # 安装单位id。1对多，将联系归到多侧，加上1侧主码
-    install_unit_id = ForeignKeyField(InstallUnit, backref='terminal') 
+    install_unit = ForeignKeyField(InstallUnit, backref='terminal')
 
 
 class Loop(BaseModel):
     """
     回路表
     """
-    id_ = IntegerField(column_name='id') # 主码自增
+    id_ = IntegerField(primary_key=True) # 主码自增
     num = CharField() # 回路编号
 
 
@@ -110,59 +110,71 @@ class Connection(BaseModel):
     """
     连接关系表，m对n
     """
-    id_ = IntegerField(column_name='id') # 主键
+    id_ = IntegerField(primary_key=True) # 主键
     terminal = ForeignKeyField(Terminal)
     loop = ForeignKeyField(Loop)
 
     class Meta:
-        indexes = ((('id_', 'terminal', 'loop'), True))
+        indexes = (
+            (('id_', 'terminal', 'loop'), True),
+        )
+
 
 class TaskOperation(BaseModel):
     """
     检测任务主体、操作人员主体、涉及端子主体联系表
     """
-    id_ = IntegerField(column_name='id') # 主键
+    id_ = IntegerField(primary_key=True) # 主键
     task = ForeignKeyField(Task)
     operator = ForeignKeyField(Operator)
     terminal = ForeignKeyField(Terminal)
 
     class Meta:
-        indexes = ((('task', 'operator', 'terminal'), True))
+        indexes = (
+            (('task', 'operator', 'terminal'), True),
+        )
 
 _models = {
-    'Task': Task,
-    'Operator': Operator,
-    'Cubicle': Cubicle,
-    'InstallUnit': InstallUnit,
-    'Terminal': Terminal,
-    'Loop': Loop,
-    'Connection': Connection,
-    'TaskOperation': TaskOperation,
+    'Task': (Task, ),
+    'Operator': (Operator, ),
+    'Cubicle': (Cubicle, [Cubicle.id_]),
+    'InstallUnit': (InstallUnit, [InstallUnit.id_, InstallUnit.plate_text, InstallUnit.cubicle]),
+    'Terminal': (Terminal, [Terminal.id_, Terminal.num, Terminal.install_unit]),
+    'Loop': (Loop, [Loop.id_, Loop.num]),
+    'Connection': (Connection, [Connection.id_, Connection.terminal, Connection.loop]),
+    'TaskOperation': (TaskOperation, ),
 }
 
-def create_tables():
-    db.connect()
-    tables = list(_models.values())
-    db.create_tables(tables)
+def create_tables():  #pylint: disable=C0116
+    with db:
+        tables = [value[0] for value in list(_models.values())]
+        db.create_tables(tables)
 
-def connect_db():
-    db.connect()
+def connect():  #pylint: disable=C0116
+    if db.is_closed():
+        db.connect()
 
-def close_db():
-    db.close()
+def close():  #pylint: disable=C0116
+    if not db.is_closed():
+        db.close()
 
-def store(model_type, data):
+# TODO：装饰器
+def store(model_data_dict):
     """
     Parameters
     ----------
-    model_type：_models.keys
-    query：column=value
+    model_data_dict：key = model_type_name, value = row_data, see fields in _models.
 
     Returns
     ----------
     """
-    assert model_type in _models.keys(), f'model_type不能为{model_type}'
-    model = _models[model_type]
+    for key, value in model_data_dict.items():
+        assert key in _models.keys(), f'model_type不能为{key}'
+        model, fields = _models[key][0], _models[key][1]
+        connect()
+        with db.atomic() as transaction:
+            model.insert_many(value, fields).execute()
+        close()
 
 if __name__ == '__main__':
     pass

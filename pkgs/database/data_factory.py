@@ -138,6 +138,7 @@ class DataFactory():
             cubicles, install_units, terminals, loops, connections = [], [], [], [], []
 
             c_ids = n_df['cubicle_id'].unique() # 多条数据指向同一个计量柜
+            i_id = 0
             for c_id in c_ids:
                 # 计量柜
                 c_data = (c_id, ) # C.id_
@@ -147,8 +148,8 @@ class DataFactory():
                 conditon = (n_df['cubicle_id'] == c_id)
                 p_texts = n_df[conditon]['plate_text'].unique()
                 # 手动设置主键为i，即数据次序，方便设置外键
-                for i, p_text in enumerate(p_texts):
-                    i_data = (i, p_text, c_id) # I.id_, I.p_text, I.c_id，通过id连接外键
+                for p_text in p_texts:
+                    i_data = (i_id, p_text, c_id) # I.id_, I.p_text, I.c_id，通过id连接外键
                     install_units.append(i_data)
 
                     # 多条数据指向同一个计量柜中的同一个安装单位中的同一个端子
@@ -156,8 +157,8 @@ class DataFactory():
                     t_nums = n_df[conditon]['terminal_num'].unique()
                     for t_num in t_nums:
                         t_num = int(t_num)
-                        t_id = DataFactory.get_terminal_id(c_id, i, t_num)
-                        t_data = (t_id, t_num, i) # T.id_, T.num, T.i_id
+                        t_id = DataFactory.get_terminal_id(c_id, i_id, t_num)
+                        t_data = (t_id, t_num, i_id) # T.id_, T.num, T.i_id
                         terminals.append(t_data)
 
                         # 查询这个端子对应的连接回路
@@ -167,6 +168,7 @@ class DataFactory():
                             # 存储端子id和回路文本
                             connection = (t_id, connected_loop_num)
                             temp_connections.append(connection)
+                    i_id += 1
 
             # 端子连接回路是一个难点，因为是多对多
             # 逐个检查连接，同时生成loops和connections
@@ -185,8 +187,8 @@ class DataFactory():
                 # 不能直接插入l_id
                 # 举例：三条连接分别是回路1、2、1；第3条连接验证后，l_id是2，但该条连接回路1对应id应是1
                 # i是连接的次序作为主键，查询该条回路对应次序作为回路外键，该条连接中的t_id作为端子外键
-                # Connection.id, Connection.loop_id, Connection.terminal_id
-                connection_data = (i, num2id[loop_num], t_id)
+                # Connection.id,  Connection.terminal_id, Connection.loop_id
+                connection_data = (i, t_id, num2id[loop_num])
                 connections.append(connection_data)
 
             # 数据顺序不能颠倒，因为有外键关系
@@ -199,8 +201,3 @@ class DataFactory():
             }
 
         return model_data_dict
-
-
-
-
-
