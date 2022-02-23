@@ -16,13 +16,14 @@ import os.path as path
 
 import numpy as np
 
+from .rec import Rec
 
 class RecdataIO(object):
     """
     读取txt文件，写入txt文件
     """
     @staticmethod
-    def read_rec_txt(txt_path, return_classes_list=False):
+    def read_rec_txt(txt_path):
         """
         读取一张图片的rec txt文件
         将其转为该图片中所有rec四点坐标的列表
@@ -31,30 +32,28 @@ class RecdataIO(object):
         txt_path：rec txt路径
 
         Returns
-        recs_xy_list：多个rec的四点坐标
+        recs_list：多个rec实例
         ----------
         """
-        recs_xy_list = []
-        recs_classes_list = []
+        recs_list = []
         with open(txt_path, 'r', encoding='utf8') as rec_txt:
             lines = rec_txt.readlines()
             for line in lines:
                 line = line.strip().split(',')
-                # len = 8，是recs_xy_list txt；
-                # len = 9，是label txt
+                classes = None
+                # len = 8，不含类别信息
+                # len = 9，包含类别信息
                 if len(line) == 9:
                     if line[-1] == 'number' or line[-1] == '编号':
-                        classes = '编号'
+                        classes = 'terminal'
                     else:
-                        classes = '铭牌'
+                        classes = 'plate'
                     line = line[:-1]
-                    recs_classes_list.append(classes)
                 xy_list = [float(xy) for xy in line]
-                recs_xy_list.append(xy_list)
+                rec = Rec(xy_list, classes)
+                recs_list.append(rec)
 
-        if return_classes_list:
-            return recs_xy_list, recs_classes_list
-        return recs_xy_list
+        return recs_list
 
     @staticmethod
     def read_rec_txt_dir(txt_dir, keyword=None):
@@ -64,7 +63,7 @@ class RecdataIO(object):
         ----------
         txt_dir：rec txt的文件夹
         keyword：如果不为None，则只读取文件名包含keyword的txt
-        
+
         Returns
         ----------
         imgs_rec_dict：dict，键为txt文件名，值为该txt的recs_xy_list
@@ -90,7 +89,7 @@ class RecdataIO(object):
         输出结果基于resize后img
         Parameters
         ----------
-        
+
         Returns
         ----------
         """
@@ -169,7 +168,7 @@ class RecdataIO(object):
         ----------
         json_dir：json文件存放文件夹
         txt_dir：输出txt文件夹，若为None，则选择json_dir
-        
+
         Returns
         ----------
         """
@@ -220,7 +219,7 @@ class RecdataIO(object):
         ----------
         """
         is_keyword_in_label = (
-            lambda node, keyword: 
+            lambda node, keyword:
                 True if keyword is None or keyword in node['labels']['labelName'] else False
         )
 
@@ -230,7 +229,7 @@ class RecdataIO(object):
                 json1 = json.loads(json1_file.read())
             with open(json2_filepath, encoding='utf-8') as json2_file:
                 json2 = json.loads(json2_file.read())
-            
+
             merge_json1 = [node for node in json1 if is_keyword_in_label(node, json1_keyword)]
             merge_json2 = [node for node in json2 if is_keyword_in_label(node, json2_keyword)]
             merge_json = merge_json1 + merge_json2
@@ -252,4 +251,3 @@ class RecdataIO(object):
             merge_json_path = path.join(output_dir, file)
             with open(merge_json_path, 'w', encoding='utf-8') as f:
                 json.dump(merge_json, f, ensure_ascii=False, indent=indent)
-  

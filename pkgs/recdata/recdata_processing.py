@@ -518,9 +518,8 @@ class RecdataProcess(object):
             # TODO：randomlized
             pass
 
-        return recs_xy_list
+        return recs_list
 
-    # TODO：rec需要排序,recogniz中是否已经重排过了
     # TODO：通过plate分组，似乎pca分组没有必要了。检查发现还是有必要的，有些同一个安装单位中的端子分布不一致
     @staticmethod
     def plate_group(recs_list):
@@ -534,11 +533,10 @@ class RecdataProcess(object):
         Returns
         ----------
         """
-        # TODO：考虑不能确定类别的情况
-        group_list = [] # list的第一个元素是铭牌
-        tmp_list = []
+        group_list, tmp_list = [], [] # list的第一个元素是铭牌
         plate_text = '无铭牌'
-        for i, rec in enumerate(recs_list):
+        recs_list = RecdataProcess.reorder_recs(recs_list)
+        for rec in recs_list:
             assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
             # 遇到plate新建一组
             if rec.classes == 'plate': # 不确定的rec不能新开组
@@ -548,6 +546,8 @@ class RecdataProcess(object):
             # 未遇到plate
             rec.set_attr(plate_text=plate_text)
             tmp_list.append(rec)
+        # 此时所有rec都不是铭牌
+        group_list.append(tmp_list)
         # 当plate是第一个时，group_list append了空tmp_list
         group_list = [group for group in group_list if bool(group)]
 
@@ -679,6 +679,7 @@ class RecdataRecognize(object):
         return _access_token
 
     # TODO：url等常量设置为类常量或cfg常量
+    # TODO：返回数据修改易于使用
     @staticmethod
     def _recognize(img_path, classes=None):
         assert  classes in ('plate', 'number'), 'classes参数错误'
@@ -705,14 +706,15 @@ class RecdataRecognize(object):
     # TODO：函数拆分
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
     # TODO：矫正中PCA部分会出现division by zero，执行操作前检查数量
-    # TODO：应该返回所有predict的rec，而不仅仅是recognize的rec，识别失败的rec标注上未识别
     # 2/4，将传参的recs_xy_list和recs_classes_list改为recs_list
     @staticmethod
-    def recognize(img_name, recs_list, joint_img_dir=cfg.joint_img_dir):
+    def recognize(img, img_name, recs_list, joint_img_dir=cfg.joint_img_dir):
         """
         依据east的predict结果，先拼接图片，再识别
         Parameters
         ----------
+        img：用于joint_img中裁切拼接
+        img_name：图片名
         recs_list：多个Rec实例
         joint_img_dir：输出joint_img文件夹，需要结合img_name遍历文件识别
 
@@ -725,8 +727,6 @@ class RecdataRecognize(object):
         ImageProcess = image_processing.ImageProcess
         Correction = recdata_correcting.Correction
 
-        # TODO：重排顺序放在east的predict函数中，重排顺序原因是PCA矫正中依赖顺序
-        # 2/4修改
         # 分类，纠正端子后，拼接图片
         recs_list = RecdataProcess.reorder_recs(recs_list)
         plates = [rec for rec in recs_list if rec.classes == 'plate']
@@ -739,21 +739,18 @@ class RecdataRecognize(object):
             xy_list = Recdata.get_xy_list(shape_data)
             terminal_num_xy_list = Recdata.get_text_area(xy_list) # 中心编号部分坐标
             corrected_terminals.append(Rec(xy_list=terminal_num_xy_list, classes='terminal'))
-        recs_list = plates + terminals
-        joint_data = ImageProcess.joint_rec(recs_list)
+        recs_list = plates + corrected_terminals
+        joint_data = ImageProcess.joint_rec(img, img_name, recs_list)
 
         recognize_recs_list = []
         this_joint_img_dir = path.join(joint_img_dir, img_name)
         for file in os.listdir(this_joint_img_dir):
             img_path = path.join(this_joint_img_dir, file)
             classes = file.split('_')[0]
-            words_result = RecdataRecognize._recognize(img_path, classes)
-            if words_result is None:
-                break
-            file_joint_data = joint_data[file] # 某一张拼接图片的joint_data
 
             if classes == 'terminal':
                 chars, locations = [], []
+                words_result = RecdataRecognize._recognize(img_path, classes)
                 for word_result in words_result:
                     chars += [_['char'] for _ in word_result['chars']]
                     # 字符的中心x坐标
@@ -762,8 +759,10 @@ class RecdataRecognize(object):
                         for _ in word_result['chars']
                     ]
                 # 主要是大小比较速度快
+                file_joint_data = joint_data[file] # 某一张拼接图片的joint_data
                 for i, rec in enumerate(file_joint_data):
                     # TODO：考虑只有一个rec的极端情况
+                    # TODO：函数拆分
                     if i == 0:
                         after_rec_x_pos = file_joint_data[i + 1].joint_x_position
                         l, r = 0, int(0.5 * rec.joint_x_position[1] + 0.5 * after_rec_x_pos[0])
@@ -790,9 +789,11 @@ class RecdataRecognize(object):
                     # rec在joint中已包含xy_list信息
                     if text:
                         rec.text = text
-                        recognize_recs_list.append(rec)
+                    else:
+                        rec.text = '未识别'
+                    recognize_recs_list.append(rec)
 
-            else:
+            elif classes == 'plate':
                 # 铭牌图片不拼接，一张图片只有一个rec
                 rec = file_joint_data[0]
                 text = ''.join([_['words'] for _ in words_result])

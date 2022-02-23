@@ -11,11 +11,13 @@ from keras import backend
 from PIL import Image
 
 from .east import east_net
-from .recdata import recdata_processing, recdata_io
+from .recdata import recdata_database, recdata_processing, recdata_io
 from .tool import visualization
 
 EastNet = east_net.EastNet
 RESULT_IMG_PATH = './resource/tmp.jpg'  # 基于根目录运行入口文件
+RecdataDB = recdata_database.RecdataDB
+RecdataProcess = recdata_processing.RecdataProcess
 RecdataRecognize = recdata_processing.RecdataRecognize
 RecdataIO = recdata_io.RecdataIO
 RecDraw = visualization.RecDraw
@@ -48,7 +50,7 @@ class EndToEnd(object):
         graph = self.east.get_graph()
         return graph
 
-    def detect_recognize(self, img_path):
+    def detect_recognize(self, cubicle_id, img_path, test_rec_txt_path=None, *loops_num):
         """
         输入单张图片路径，完成检测及识别
         返回绘制识别结果的图片
@@ -65,24 +67,27 @@ class EndToEnd(object):
         """
         img = Image.open(img_path)
         img_name = path.basename(img_path)
-        recs_list = self.east.predict(img_dir_or_path=img_path)
+        recdata_db = RecdataDB(cubicle_id)
 
-        # 不包括识别信息
-        # recs_xy_list, recs_classes_list = recs_list[0][0], recs_list[1][0]
-        # for i, xy_list in enumerate(recs_xy_list):
-        #     RecDraw.draw_rec(xy_list, img)
-        #     RecDraw.draw_text(recs_classes_list[i], xy_list, img)
-
-        # 区别于上文，这是识别成功的
-        recognize_recs_list = RecdataRecognize.recognize(
-            img, img_name, recs_xy_list, recs_classes_list
-        )
-        recs_xy_list, recs_classes_list, recs_text_list = [], [], []
-        for rec in recognize_recs_list:
-            recs_xy_list.append(rec.xy_list)
-            recs_classes_list.append(rec.classes)
-            recs_text_list.append(rec.text)
-            print(rec.text)
-            RecDraw.draw_text(rec.text, rec.xy_list, img)
-        RecDraw.draw_recs(recs_xy_list, img)
-        img.save(RESULT_IMG_PATH)
+        if test_rec_txt_path is not None:
+            recs_list = self.east.predict(img_dir_or_path=img_path)
+            # 识别成功的
+            recognize_recs_list = RecdataRecognize.recognize(img, img_name, recs_list)
+        # recognize_recs_list = read_txt
+        group_list = RecdataProcess.plate_group(recognize_recs_list)
+        # 生成端子id
+        group_list = recdata_db.get_terminals_id(group_list)
+        # 查询连接回路
+        for group in group_list:
+            if not group[0].classes == 'plate':
+                pass
+                # 显示手动输入
+            for i, rec in enumerate(group):
+                if i == 0:
+                    continue
+                terminal_id = rec.id_
+                loops_id = recdata_db.get_connected_loops_id(terminal_id)
+                for loop_id in loops_id:
+                    loop_num = recdata_db.get_loop_num(loop_id)
+                    if loop_num in loops_num:
+                        print(f'{rec.xy_list}是待检端子')

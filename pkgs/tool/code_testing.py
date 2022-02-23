@@ -95,7 +95,7 @@ class CodeTest(object):
         """
         Parameters
         ----------
-        
+
         Returns
         ----------
         """
@@ -136,7 +136,10 @@ class CodeTest(object):
 
     @staticmethod
     def test_end_to_end(
+        cubicle_id=cfg.test_end_to_end_cubicle_id,
         img_path=cfg.test_end_to_end_img_path,
+        test_rec_txt_path=cfg.test_end_to_end_txt_path,
+        
     ):
         """
         Parameters

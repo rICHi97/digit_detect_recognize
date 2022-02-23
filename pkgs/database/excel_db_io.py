@@ -54,6 +54,7 @@ def excel2db():
     ----------
     """
     if path.exists(cfg.database_path):
+        my_database.close()
         os.remove(cfg.database_path)
     my_database.create_tables()
     for excel_type in ('端子信息', ):

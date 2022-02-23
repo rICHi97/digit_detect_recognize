@@ -20,3 +20,6 @@
 	2 识别结果端子编号terminal_num，组合cibucle_id和install_id生成变电站中每个端子独一无二的terminal_id
 	3 查询terminal_id所连回路loop_num
 	4 在原始图片中标注符合要求的terminal
+五 ui程序设计
+	1 下发任务，选择现场检验类型，在可选回路中选择待检回路，推送任务工单
+	2 接收任务

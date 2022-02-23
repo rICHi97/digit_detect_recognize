@@ -101,6 +101,7 @@ class Loop(BaseModel):
     """
     回路表
     """
+    # 回路无需指定计量柜，回路编号在变电站内应是唯一的
     id_ = IntegerField(primary_key=True) # 主码自增
     num = CharField() # 回路编号
 

@@ -526,8 +526,8 @@ class Correction(object):
 
         return avg_rotate_angle_H1, avg_rotate_angle_H2
 
-    # TODO：矫正端子，返回矫正后端子数据
     # TODO：矫正前也许需要先LOF筛选异常值
+    # TODO：参数改为recs_list
     @staticmethod
     def correct_rec(recs_xy_list):
         """

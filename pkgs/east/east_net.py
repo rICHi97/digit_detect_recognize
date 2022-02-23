@@ -236,9 +236,9 @@ class EastNet(object):
             img_paths = [path.join(img_dir_or_path, img_file) for img_file in img_files]
         else:
             img_paths = [img_dir_or_path]
-            
+
         imgs_recs_list, recs_list = [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
-        
+
         for img_path in img_paths:
 
             img = preprocessing.image.load_img(img_path).convert('RGB')
@@ -270,7 +270,7 @@ class EastNet(object):
                     xy_list[:, 0] *= scale_ratio_w
                     xy_list[:, 1] *= scale_ratio_h
                     xy_list = np.reshape(xy_list, (8,)).tolist()
-                    rec = Rec(xy_list=xy_list, classes=recs_classes_list[i])                                                                                                                                                                                                                                                                                                                                                       
+                    rec = Rec(xy_list=xy_list, classes=recs_classes_list[i])
                     recs_list.append(rec)
 
             imgs_recs_list.append(recs_list)
