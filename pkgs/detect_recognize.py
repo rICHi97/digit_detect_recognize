@@ -58,8 +58,10 @@ class EndToEnd(object):
         不设置额外参数，实现细节参数通过各模块cfg文件设置默认值
         Parameters
         ----------
+        cubicle_id：规范化后的计量柜id，扫描二维码后得到
         img_path：图片路径
-        graph：仅在多线程时设置该参数
+        test_rec_txt_path：仅用于测试，不通过east识别，而是直接读取txt文件作为检测识别结果
+        loops_num：回路编号
 
         Returns
         ----------
@@ -67,16 +69,15 @@ class EndToEnd(object):
         """
         img = Image.open(img_path)
         img_name = path.basename(img_path)
-        recdata_db = RecdataDB(cubicle_id)
+        db = RecdataDB(cubicle_id)
 
-        if test_rec_txt_path is not None:
+        if test_rec_txt_path is None:
             recs_list = self.east.predict(img_dir_or_path=img_path)
-            # 识别成功的
-            recognize_recs_list = RecdataRecognize.recognize(img, img_name, recs_list)
-        # recognize_recs_list = read_txt
+        else:
+            recs_list = RecdataIO.read_rec_txt(test_rec_txt_path)
+        recognize_recs_list = RecdataRecognize.recognize(img, img_name, recs_list) # 识别成功的
         group_list = RecdataProcess.plate_group(recognize_recs_list)
-        # 生成端子id
-        group_list = recdata_db.get_terminals_id(group_list)
+        group_list = db.get_terminals_id(group_list) # 生成端子id
         # 查询连接回路
         for group in group_list:
             if not group[0].classes == 'plate':
@@ -86,8 +87,8 @@ class EndToEnd(object):
                 if i == 0:
                     continue
                 terminal_id = rec.id_
-                loops_id = recdata_db.get_connected_loops_id(terminal_id)
+                loops_id = db.get_connected_loops_id(terminal_id)
                 for loop_id in loops_id:
-                    loop_num = recdata_db.get_loop_num(loop_id)
+                    loop_num = db.get_loop_num(loop_id)
                     if loop_num in loops_num:
                         print(f'{rec.xy_list}是待检端子')

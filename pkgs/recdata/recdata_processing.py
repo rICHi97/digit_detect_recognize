@@ -682,7 +682,7 @@ class RecdataRecognize(object):
     # TODO：返回数据修改易于使用
     @staticmethod
     def _recognize(img_path, classes=None):
-        assert  classes in ('plate', 'number'), 'classes参数错误'
+        assert  classes in ('plate', 'terminal'), 'classes参数错误'
         access_token = RecdataRecognize._get_access_token()
         with open(img_path, 'rb') as f:
             img = base64.b64encode(f.read())
@@ -703,7 +703,65 @@ class RecdataRecognize(object):
 
             return words_result
 
-    # TODO：函数拆分
+    @staticmethod
+    def _map_joint_x_position_with_char(words_result, joint_img_data, classes):
+        assert classes in ('terminal', 'plate', ), f'{classes}错误'
+        recognize_joint_img_recs_list = []
+
+        if classes == 'terminal':
+            for word_result in words_result:
+                chars += [_['char'] for _ in word_result['chars']]
+                # 字符的中心x坐标
+                locations += [
+                    int(_['location']['left'] + _['location']['width'] / 2)
+                    for _ in word_result['chars']
+                ]
+            cnt = len(joint_img_data)
+            # 主要是大小比较速度快
+            for i, rec in enumerate(joint_img_data):
+                # TODO：考虑只有一个rec的极端情况
+                before_pos, after_pos = (
+                    joint_img_data[min(0, i - 1)],
+                    joint_img_data[max(cnt - 1, i + 1)],
+                )
+                this_pos = rec.joint_joint_x_position
+                l, r = (
+                    int(0.5 * (before_pos + this_pos)) if not i == 0 else 0,
+                    int(0.5 * (after_pos + this_pos)) if not i == cnt - 1 else 9999，
+                )
+                text = ''
+                for j, location in enumerate(locations):
+                    # 可能有多个location在lr里
+                    if l < location < r:
+                        text += chars[j]
+                    # location递增，当前location已经大于r，之后无需比较
+                    if r < location:
+                        break
+                # rec在joint中已包含xy_list信息
+                if text:
+                    rec.text = text
+                else:
+                    rec.text = '未识别'
+                recognize_joint_img_recs_list.append(rec)
+            elif classes == 'plate':
+                # 铭牌图片不拼接，一张图片只有一个rec
+                rec = file_joint_data[0]
+                text = ''.join([_['words'] for _ in words_result])
+                rec.text = text
+                recognize_recs_list.append(rec)
+
+            return recognize_joint_img_recs_list
+
+    @staticmethod
+    def _recognize_joint_img(joint_img_path, joint_img_data, classes):
+        assert classes in ('terminal', 'plate', ), f'{classes}错误'
+        words_result = RecdataRecognize._recognize(joint_img_path, classes)
+        recognize_joint_img_recs_list = RecdataRecognize._map_joint_x_position_with_char(
+            words_result, joint_img_data, classes
+        )
+
+        return recognize_joint_img_recs_list
+
     # TODO：优化速度，joint_rec中的图片和数组操作可能是性能瓶颈
     # TODO：矫正中PCA部分会出现division by zero，执行操作前检查数量
     # 2/4，将传参的recs_xy_list和recs_classes_list改为recs_list
@@ -729,75 +787,20 @@ class RecdataRecognize(object):
 
         # 分类，纠正端子后，拼接图片
         recs_list = RecdataProcess.reorder_recs(recs_list)
-        plates = [rec for rec in recs_list if rec.classes == 'plate']
-        terminals = [rec for rec in recs_list if rec.classes == 'terminal']
-        # 纠正xy_list
-        terminals_xy_list = [rec.xy_list for rec in terminals]
-        corrected_shape_datas = Correction.correct_rec(terminals_xy_list)
-        corrected_terminals = []
-        for shape_data in corrected_shape_datas:
-            xy_list = Recdata.get_xy_list(shape_data)
-            terminal_num_xy_list = Recdata.get_text_area(xy_list) # 中心编号部分坐标
-            corrected_terminals.append(Rec(xy_list=terminal_num_xy_list, classes='terminal'))
-        recs_list = plates + corrected_terminals
-        joint_data = ImageProcess.joint_rec(img, img_name, recs_list)
+        corrected_recs_list = Correction.correct_rec(recs_list)
+        joint_data = ImageProcess.joint_rec(img, img_name, corrected_recs_list)
 
         recognize_recs_list = []
         this_joint_img_dir = path.join(joint_img_dir, img_name)
+
+        # 识别每张拼接图片
         for file in os.listdir(this_joint_img_dir):
-            img_path = path.join(this_joint_img_dir, file)
+            joint_img_path = path.join(this_joint_img_dir, file)
+            joint_img_data = joint_data[file] # 某张图片的拼接joint_data
             classes = file.split('_')[0]
-
-            if classes == 'terminal':
-                chars, locations = [], []
-                words_result = RecdataRecognize._recognize(img_path, classes)
-                for word_result in words_result:
-                    chars += [_['char'] for _ in word_result['chars']]
-                    # 字符的中心x坐标
-                    locations += [
-                        int(_['location']['left'] + _['location']['width'] / 2)
-                        for _ in word_result['chars']
-                    ]
-                # 主要是大小比较速度快
-                file_joint_data = joint_data[file] # 某一张拼接图片的joint_data
-                for i, rec in enumerate(file_joint_data):
-                    # TODO：考虑只有一个rec的极端情况
-                    # TODO：函数拆分
-                    if i == 0:
-                        after_rec_x_pos = file_joint_data[i + 1].joint_x_position
-                        l, r = 0, int(0.5 * rec.joint_x_position[1] + 0.5 * after_rec_x_pos[0])
-                    elif i == len(file_joint_data) - 1:
-                        before_rec_x_pos = file_joint_data[i - 1].joint_x_position
-                        l, r = int(0.5 * before_rec_x_pos[1] + 0.5 * rec.joint_x_position[0]), 9999
-                    else:
-                        before_rec_x_pos, after_rec_x_pos = (
-                            file_joint_data[i - 1].joint_x_position,
-                            file_joint_data[i + 1].joint_x_position,
-                        )
-                        l, r = (
-                            int(0.5 * before_rec_x_pos[1] + 0.5 * rec.joint_x_position[0]),
-                            int(0.5 * rec.joint_x_position[1] + 0.5 * after_rec_x_pos[0]),
-                        )
-                    text = ''
-                    for j, location in enumerate(locations):
-                        # 可能有多个location在lr里
-                        if l < location < r:
-                            text += chars[j]
-                        # location递增，当前location已经大于r，之后无需比较
-                        if r < location:
-                            break
-                    # rec在joint中已包含xy_list信息
-                    if text:
-                        rec.text = text
-                    else:
-                        rec.text = '未识别'
-                    recognize_recs_list.append(rec)
-
-            elif classes == 'plate':
-                # 铭牌图片不拼接，一张图片只有一个rec
-                rec = file_joint_data[0]
-                text = ''.join([_['words'] for _ in words_result])
-                rec.text = text
-                recognize_recs_list.append(rec)
+            recognize_joint_img_recs_list = RecdataRecognize._recognize_joint_img(
+                joint_img_path, joint_img_data, classes
+            )
+            recognize_recs_list += recognize_joint_img_recs_list
 
         return recognize_recs_list

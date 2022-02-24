@@ -16,7 +16,7 @@ import math
 import numpy as np
 from sklearn import linear_model, decomposition, preprocessing
 
-from . import recdata_processing
+from . import cfg, rec, recdata_processing
 
 LinearRegression = linear_model.LinearRegression
 PCA_ = decomposition.PCA
@@ -24,6 +24,7 @@ MaxAbsScaler = preprocessing.MaxAbsScaler
 MinMaxScaler = preprocessing.MinMaxScaler
 StandardScaler = preprocessing.StandardScaler
 
+Rec = rec.Rec
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
 
@@ -106,7 +107,7 @@ def _get_train_data(
     sklearn_data = np.array(sklearn_data)
 
     return sklearn_data
-     
+
 
 # TODO：只有前两个delta_pca_value可能是nan
 def _get_avg(data_list):
@@ -267,7 +268,7 @@ class PCA(object):
 
             # TODO：不归一化时，一阶差值可能很大，平均值也很大
             # 例，一阶差值[412, -429, 412, -427]，求平均后后虽然相对原始数据很小
-            # 但相对二阶差值依然很大  
+            # 但相对二阶差值依然很大
             # abs_list = lambda list_: [abs(x) for x in list_ if not math.isnan(x)]
             # abs_delta_one_values, abs_delta_two_values = (
             #     abs_list(delta_one_values),
@@ -279,7 +280,7 @@ class PCA(object):
             #     _get_avg(delta_one_values) / _get_avg(abs_delta_one_values),
             #     _get_avg(delta_two_values) / _get_avg(abs_delta_two_values),
             # )
-            
+
             delta_ratio = abs(avg_delta_two_value) / abs(avg_delta_one_value + EPSILON)
 
             return delta_ratio
@@ -314,7 +315,6 @@ class PCA(object):
             return divide_groups
 
         def divide_two_cols(pca_values):
-            # TODO：这里分组分错了，因为
             group1_index, group2_index = [], []
             group1_value, group2_value = [], []
             for index_, value in enumerate(pca_values):
@@ -336,7 +336,7 @@ class PCA(object):
         distribution_types = ('one_col', 'two_cols', 'one_col_n_lines')
         # 端子如果单列分布，avg_delta_two_value大致为avg_delta_one_value的两倍
         # 考虑一定的裕度
-        delta_ratio = get_delta_ratio(pca_values) 
+        delta_ratio = get_delta_ratio(pca_values)
         one_col_range = [1.8, 2.5]
         is_num_in_range = lambda num, range_: bool(range_[0] < num < range_[1])
 
@@ -484,9 +484,9 @@ class Regression(object):
 class Correction(object):
 
     # TODO：cfg参数化
-    min_rec_cnt_to_correct = 3
-    reg_indep_vars = ['center']
-    reg_dep_vars = ['length_W', 'length_H', 'rotate_angle_W']
+    min_terminal_cnt_to_correct = cfg.min_terminal_cnt_to_correct
+    reg_indep_vars = cfg.reg_indep_vars
+    reg_dep_vars = cfg.reg_dep_vars
 
     # TODO：求平均倾斜角
     @staticmethod
@@ -527,11 +527,11 @@ class Correction(object):
         return avg_rotate_angle_H1, avg_rotate_angle_H2
 
     # TODO：矫正前也许需要先LOF筛选异常值
-    # TODO：参数改为recs_list
+    # TODO：构造模拟数据进行验证
     @staticmethod
-    def correct_rec(recs_xy_list):
+    def correct_rec(recs_list):
         """
-        对端子数据进行矫正。
+        对端子数据进行矫正。仅矫正端子，不矫正铭牌。
         流程：
         --1.求pca values
         --2.依据pca values分组
@@ -543,44 +543,57 @@ class Correction(object):
 
         Returns
         ----------
-        corrected_recs_shape_data：list，每个元素为shape data字典
+        corrected_recs_list：矫正后rec列表，其中的terminal.xy_list为端子中心编号坐标
         """
-        corrected_recs_shape_data = [None for i in range(len(recs_xy_list))]
-        pca_values = PCA.get_pca_values(recs_xy_list)
-        divide_groups = PCA.divide_recs(pca_values)
-        index_groups = divide_groups['index']
+        recs_list = RecdataProcess.reorder_recs(recs_list)
+        plates, terminals, corrected_terminals = [], [], []
+        for rec in recs_list:
+            assert rec.classes in ('plate', 'terminal', ), f'{rec.classes}错误'
+            if rec.classes == 'plate':
+                plates.append(rec)
+            else:
+                terminals.append(rec)
 
+        terminals_xy_list = [terminal.xy_list for terminal in terminals] # terminal: Rec
+        pca_values = PCA.get_pca_values(terminals_xy_list)
+        divide_groups = PCA.divide_recs(pca_values) # divide_groups = value_groups + index_groups
+        index_groups = divide_groups['index']
         for index_group in index_groups:
             # 如果个数少于3个，保持原始数据
             # 否则，通过回归矫正
-            if len(index_group) < Correction.min_rec_cnt_to_correct:
+            if len(index_group) < Correction.min_terminal_cnt_to_correct:
                 for index_ in index_group:
-                    xy_list = recs_xy_list[index_]  #pylint: disable=E1136
-                    shape_data = Recdata.get_rec_shape_data(xy_list)
-                    corrected_recs_shape_data[index_] = shape_data
+                    xy_list = terminals_xy_list[index_]  #pylint: disable=E1136
+                    num_xy_list = Recdata.get_text_area(xy_list)
+                    rec = Rec(num_xy_list, 'terminal')
+                    corrected_terminals.append(rec)
             else:
-                recs_group = [recs_xy_list[i] for i in index_group]  #pylint: disable=E1136
+                to_correct_terminals_xy_list = [terminals_xy_list[i] for i in index_group]
                 avg_rotate_angle_H1, avg_rotate_angle_H2 = (
-                    Correction._get_avg_rotate_angle_H(recs_group)
+                    Correction._get_avg_rotate_angle_H(to_correct_terminals_xy_list)
                 )
                 reg_shape_data = Regression.regression(
-                    recs_group,
+                    to_correct_terminals_xy_list,
                     coef=None,
                     avg=False,
                     independent=Correction.reg_indep_vars,
                     dependent=Correction.reg_dep_vars,
                 )
                 for index_ in index_group:
-                    # index_group存储每组端子的序号
-                    # index_index为序号在group中的位置
+                    # index_group存储每组端子的序号，index_index为序号在group中的位置
                     index_index = index_group.index(index_)
                     shape_data = {}
                     for key in Correction.reg_dep_vars + Correction.reg_indep_vars:
                         shape_data[key] = reg_shape_data[key][index_index]
                     shape_data['rotate_angle_H'] = [avg_rotate_angle_H1, avg_rotate_angle_H2]
-                    corrected_recs_shape_data[index_] = shape_data
+                    xy_list = Recdata.get_xy_list(shape_data)
+                    num_xy_list = Recdata.get_text_area(xy_list)
+                    rec = Rec(num_xy_list, 'terminal')
+                    corrected_terminals.append(rec)
 
-        return corrected_recs_shape_data
+        corrected_recs_list = plates + corrected_terminals
+
+        return corrected_recs_list
 
     # TODO：和上述函数整合
     @staticmethod
@@ -590,7 +603,7 @@ class Correction(object):
         求plate_text与所有铭牌的cos距离
         Parameters
         ----------
-        
+
         Returns
         corrected_plate_text：
         ----------

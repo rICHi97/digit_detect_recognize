@@ -163,11 +163,11 @@ class ImageProcess(object):
         for rec in recs_list:
 
             img_rec = ImageProcess.crop_rec(img, rec.xy_list)
-            assert not img_rec.width * img_rec.height == 0, (f'{xy_list}裁切宽高应大于0')
+            assert not img_rec.width * img_rec.height == 0, (f'{rec.xy_list}裁切宽高应大于0')
 
             if rec.classes == 'plate':
                 img_rec.save(path.join(this_joint_img_dir, f'plate_{plate_cnt}.jpg'))
-                joint_data[f'plate_{plate_cnt}.jpg'] = [rec] 
+                joint_data[f'plate_{plate_cnt}.jpg'] = [rec]
                 plate_cnt += 1
 
             elif rec.classes == 'terminal':

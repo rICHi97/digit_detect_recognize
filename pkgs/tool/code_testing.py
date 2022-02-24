@@ -99,14 +99,14 @@ class CodeTest(object):
         Returns
         ----------
         """
-        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(recs_txt_path, True)
-        recs_text_area = []
-        for i, classes in enumerate(recs_classes_list):
-            if classes == '编号':
-                recs_text_area.append(Recdata.get_text_area(recs_xy_list[i]))
-        img = Image.open(img_path)
-        RecDraw.draw_recs(recs_text_area, img)
-        img.save('text.jpg')
+        recs_list = RecdataIO.read_rec_txt(recs_txt_path)
+        # recs_text_area = []
+        # for i, classes in enumerate(recs_classes_list):
+        #     if classes == '编号':
+        #         recs_text_area.append(Recdata.get_text_area(recs_xy_list[i]))
+        # img = Image.open(img_path)
+        # RecDraw.draw_recs(recs_text_area, img)
+        # img.save('text.jpg')
 
     @staticmethod
     def test_recognize(
@@ -123,14 +123,12 @@ class CodeTest(object):
         """
         # img = _get_img(img_path)
         img_name = path.basename(img_path)[:-4]
-        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(
-            recs_txt_path, return_classes_list=True
-        )
+        recs_xy_list, recs_classes_list = RecdataIO.read_rec_txt(recs_txt_path)
         recs_list = []
         for i in range(len(recs_xy_list)):
             rec = Rec(xy_list=recs_xy_list[i], classes=recs_classes_list[i])
             recs_list.append(rec)
-        recdata = RecdataRecognize.recognize(img_name, recs_list)
+        recdata = RecdataRecognize.recognize(img_path, img_name, recs_list)
 
         return recdata
 
@@ -139,7 +137,7 @@ class CodeTest(object):
         cubicle_id=cfg.test_end_to_end_cubicle_id,
         img_path=cfg.test_end_to_end_img_path,
         test_rec_txt_path=cfg.test_end_to_end_txt_path,
-        
+        loops_num=cfg.test_end_to_end_loops_num,
     ):
         """
         Parameters
@@ -148,7 +146,7 @@ class CodeTest(object):
         ----------
         """
         end_to_end = EndToEnd()
-        end_to_end.detect_recognize(img_path)
+        end_to_end.detect_recognize(cubicle_id, img_path, test_rec_txt_path, *loops_num)
 
 
     @staticmethod

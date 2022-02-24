@@ -20,7 +20,10 @@ test_draw_gt_gt_path = './resource/train_data/b_train_label/terminal_10_number_1
 # test_draw_gt_gt_path = './resource/test_data/gt_image/terminal_10_number_10_gt.npy' # 之前版本label
 test_draw_gt_img_path = './resource/test_data/gt_image/terminal_10_number_13.jpg'
 test_draw_gt_resized = False
+test_end_to_end_cubicle_id = 'PJ2H010AG23'
 test_end_to_end_img_path = './resource/test_data/image/10148.png'
+test_end_to_end_txt_path = './resource/test_data/label_txt/10148.txt'
+test_end_to_end_loops_num = ('JH2-10L', 'JH3-10L', 'JH6-10L', )
 
 # image_processing
 coef_x_len, coef_y_len = 0.23, 0.02
