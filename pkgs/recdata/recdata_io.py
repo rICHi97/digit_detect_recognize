@@ -161,17 +161,20 @@ class RecdataIO(object):
 
     # TODO：仅转换单个json文件
     @staticmethod
-    def json_to_txt(json_dir, txt_dir=None):
+    def json_to_txt(json_dir, txt_dir=None, format_='LabelImage'):
         """
         将json格式标签转为txt
         Parameters
         ----------
         json_dir：json文件存放文件夹
         txt_dir：输出txt文件夹，若为None，则选择json_dir
+        format_：json格式，'LabelImage'/'LabelMe'
 
         Returns
         ----------
         """
+        assert format_ in ('LabelImage', 'LabelMe')
+
         if txt_dir is None:
             txt_dir = json_dir
 
@@ -181,21 +184,38 @@ class RecdataIO(object):
             with open(json_path, encoding='utf-8') as json_file:
                 lines = []
                 this_json = json.loads(json_file.read())
-                for node in this_json:
-                    line = ''
-                    xy_list = node['content']
-                    # TODO：label对应txt区分
-                    if node['labels']['labelName'] == '未命名':
-                        label = 'number'
-                    else:
-                        label = 'plate'
-                    if not len(xy_list) == 4:
-                        print(f'{json_path}错误，应为4点')
-                        return
-                    for point in xy_list:
-                        line += '%.2f,%.2f,'%(point['x'], point['y'])
-                    line += '%s\n'%(label)
-                    lines.append(line)
+
+                if format_ == 'LabelImage':
+                    for node in this_json:
+                        line = ''
+                        xy_list = node['content']
+                        # TODO：label对应txt区分
+                        if node['labels']['labelName'] == '未命名':
+                            label = 'number'
+                        else:
+                            label = 'plate'
+                        if not len(xy_list) == 4:
+                            print(f'{json_path}错误，应为4点')
+                            return
+                        for point in xy_list:
+                            line += '%.2f,%.2f,'%(point['x'], point['y'])
+                        line += '%s\n'%(label)
+                        lines.append(line)
+
+                elif format_ == 'LabelMe':
+                    for node in this_json:
+                        shapes = node['shapes']
+
+                        for shape in shapes:
+                            line = ''
+                            xy_list = []
+                            for _ in shape['points']:
+                                xy_list += _
+                            xy_list = ','.join([f'{_:.2f}' for _ in xy_list])
+                            label = shape['label']
+                            line = f'{xy_list},{label}'
+
+                            lines.append(line)
 
             txt_file = file[:-5]+ '.txt'
             txt_path = path.join(txt_dir, txt_file)

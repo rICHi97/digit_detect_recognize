@@ -44,7 +44,7 @@ class RecdataDB(object):
             )
             return install_unit.id_
         except InstallUnit.DoesNotExist:  #pylint: disable=E1101
-            print('不存在')
+            print(f'{plate_text}不存在')
 
     # TODO：返回值优化，避免直接修改group_list？
     def get_terminals_id(self, group_list):

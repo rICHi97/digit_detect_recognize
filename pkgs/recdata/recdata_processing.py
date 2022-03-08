@@ -534,17 +534,14 @@ class RecdataProcess(object):
         ----------
         """
         group_list, tmp_list = [], [] # list的第一个元素是铭牌
-        plate_text = '无铭牌'
         recs_list = RecdataProcess.reorder_recs(recs_list)
         for rec in recs_list:
             assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
             # 遇到plate新建一组
             if rec.classes == 'plate': # 不确定的rec不能新开组
-                plate_text = rec.text
                 group_list.append(tmp_list.copy())
                 tmp_list.clear()
             # 未遇到plate
-            rec.set_attr(plate_text=plate_text)
             tmp_list.append(rec)
         # 此时所有rec都不是铭牌
         group_list.append(tmp_list)
@@ -709,6 +706,7 @@ class RecdataRecognize(object):
         recognize_joint_img_recs_list = []
 
         if classes == 'terminal':
+            chars, locations = [], []
             for word_result in words_result:
                 chars += [_['char'] for _ in word_result['chars']]
                 # 字符的中心x坐标
@@ -721,13 +719,13 @@ class RecdataRecognize(object):
             for i, rec in enumerate(joint_img_data):
                 # TODO：考虑只有一个rec的极端情况
                 before_pos, after_pos = (
-                    joint_img_data[min(0, i - 1)],
-                    joint_img_data[max(cnt - 1, i + 1)],
+                    joint_img_data[max(0, i - 1)].joint_x_position[1],
+                    joint_img_data[min(cnt - 1, i + 1)].joint_x_position[0],
                 )
-                this_pos = rec.joint_joint_x_position
+                this_pos = rec.joint_x_position
                 l, r = (
-                    int(0.5 * (before_pos + this_pos)) if not i == 0 else 0,
-                    int(0.5 * (after_pos + this_pos)) if not i == cnt - 1 else 9999，
+                    int(0.5 * (before_pos + this_pos[0])) if not i == 0 else 0,
+                    int(0.5 * (after_pos + this_pos[1])) if not i == cnt - 1 else 999,
                 )
                 text = ''
                 for j, location in enumerate(locations):
@@ -743,14 +741,14 @@ class RecdataRecognize(object):
                 else:
                     rec.text = '未识别'
                 recognize_joint_img_recs_list.append(rec)
-            elif classes == 'plate':
-                # 铭牌图片不拼接，一张图片只有一个rec
-                rec = file_joint_data[0]
-                text = ''.join([_['words'] for _ in words_result])
-                rec.text = text
-                recognize_recs_list.append(rec)
+        elif classes == 'plate':
+            # 铭牌图片不拼接，一张图片只有一个rec
+            rec = joint_img_data[0]
+            text = ''.join([_['words'] for _ in words_result])
+            rec.text = text
+            recognize_joint_img_recs_list.append(rec)
 
-            return recognize_joint_img_recs_list
+        return recognize_joint_img_recs_list
 
     @staticmethod
     def _recognize_joint_img(joint_img_path, joint_img_data, classes):
