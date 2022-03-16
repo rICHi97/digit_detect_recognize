@@ -184,12 +184,13 @@ class ImageProcess(object):
                     paste_x = 0
                 rec.set_attr(joint_x_position=(paste_x, paste_x + img_rec.width))
                 joint_img.paste(img_rec, (paste_x, paste_y))
+                paste_x += img_rec.width + spacing
                 if f'terminal_{terminal_cnt}.jpg' not in joint_data.keys():
                     joint_data[f'terminal_{terminal_cnt}.jpg'] = [rec]
                 else:
                     joint_data[f'terminal_{terminal_cnt}.jpg'].append(rec)
 
-            joint_img.save(path.join(this_joint_img_dir, f'terminal_{terminal_cnt}.jpg'))
+        joint_img.save(path.join(this_joint_img_dir, f'terminal_{terminal_cnt}.jpg'))
 
         return joint_data
 
@@ -371,6 +372,7 @@ class ImageProcess(object):
         get_filename = lambda file: file.split('.')[0]  # 去除格式拓展名
         label_names = [get_filename(label_file) for label_file in label_files]
         samename_img_files = []
+        # 确定待裁切图片，仅裁切有对应label_txt的图片
         for img_file in img_files:
             if get_filename(img_file) in label_names:
                 samename_img_files.append(img_file)
@@ -380,3 +382,12 @@ class ImageProcess(object):
             label_file = get_filename(img_file) + '.txt'
             label_filepath = path.join(label_dir, label_file)
             crop_img(img_filepath, label_filepath)
+
+    @staticmethod
+    def segment(img_path):
+
+        img = cv2.imread(img_path)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        thres, img_segment = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        return img_segment

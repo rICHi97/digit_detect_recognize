@@ -237,7 +237,7 @@ class EastNet(object):
         else:
             img_paths = [img_dir_or_path]
 
-        imgs_recs_list, recs_list = [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
+        imgs_recs_list, recs_list = [], [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
 
         for img_path in img_paths:
 

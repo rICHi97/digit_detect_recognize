@@ -53,7 +53,7 @@ def _get_W_H_ratio(xy_list):
     W_H_ratio：宽高比
     """
     rec_shape_data = Recdata.get_rec_shape_data(
-        xy_list, 
+        xy_list,
         center=False,
         length_W=True,
         length_H=True,
@@ -94,7 +94,7 @@ def _point_inside_head_or_tail(px, py, xy_list, shrink_1, long_edge):
     通过两次收缩得到内部像素，xy_list是原始坐标，shrink_1是收缩一次结果
     Parameters
     ----------
-    
+
     Returns
     ----------
     nth：0，首部；1，尾部
@@ -165,7 +165,7 @@ class EastPreprocess(object):
         if o_height == max_img_size:
             ratio = o_height / img_height
             o_width = int(ratio * img_width)
-        else:                             
+        else:
             o_width = img_width
         d_width, d_height = o_width - (o_width % 32), o_height - (o_height % 32)
 
@@ -175,9 +175,9 @@ class EastPreprocess(object):
     @staticmethod
     def preprocess(
         data_dir=cfg.data_dir,
-        origin_img_dir=cfg.origin_img_dir, 
-        origin_txt_dir=cfg.origin_txt_dir, 
-        train_img_dir=cfg.train_img_dir, 
+        origin_img_dir=cfg.origin_img_dir,
+        origin_txt_dir=cfg.origin_txt_dir,
+        train_img_dir=cfg.train_img_dir,
         train_label_dir=cfg.train_label_dir,
         show_preprocess_img=cfg.show_preprocess_img,
         preprocess_img_dir=cfg.preprocess_img_dir,
@@ -202,7 +202,7 @@ class EastPreprocess(object):
         #     label_img_dir;  label后将小方格图片，标示首尾像素
         #     preprocess_img_dir;  preprocess后图片
         #     val_file;
-        #     train_file;    
+        #     train_file;
         # data_dir为绝对路径或相对路径，其余dir为字符串，相对data_dir
         show_preprocess：是否保存preprocess后小方格标签图片
         max_train_img_size：最大训练图片尺寸
@@ -235,6 +235,9 @@ class EastPreprocess(object):
             origin_img_path = path.join(origin_img_dir, origin_img_name)
             origin_txt_path = path.join(origin_txt_dir, origin_img_name[:-4] + '.txt')
 
+            if not path.exists(origin_txt_path):
+                continue
+
             with Image.open(origin_img_path) as img:
                 # TODO：和别处中scale_ratio要对应
                 scale_ratio_w = d_width / img.width
@@ -253,6 +256,9 @@ class EastPreprocess(object):
             for anno, i in zip(annotation_list, range(len(annotation_list))):
                 anno_columns = anno.strip().split(',') # 单个rec
                 anno_array = np.array(anno_columns)
+                if len(anno_columns) != 9:
+                    print(origin_txt_path)
+                    continue
 
                 # TODO：函数拆分
                 xy_list = np.reshape(anno_array[:8].astype(float), (4, 2))
@@ -261,7 +267,7 @@ class EastPreprocess(object):
                 xy_list = RecdataProcess.reorder_rec(xy_list)
                 four_points = xy_list.copy()
                 xy_list = np.reshape(xy_list, -1).tolist()
-                if anno_array[8] == 'number': # TODO：append到最后
+                if anno_array[8] == 'terminal': # TODO：append到最后
                     xy_list.insert(1, 0)
                 elif anno_array[8] == 'plate':
                     xy_list.insert(1, 1)
@@ -286,7 +292,7 @@ class EastPreprocess(object):
                         width=1,
                         fill='green',
                     )
-                    
+
                     # shrink后框
                     draw.line(
                         [
@@ -299,7 +305,7 @@ class EastPreprocess(object):
                         width=1,
                         fill='blue',
                     )
-                    
+
                     # 应该是用来判断首尾边界的
                     vs = [[[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]],
                           [[0, 0, 1, 1, 0], [2, 2, 3, 3, 2]]]
@@ -335,12 +341,12 @@ class EastPreprocess(object):
         with open(path.join(data_dir, val_filename), 'w') as f:
             f.writelines(train_val_set[:val_count])
         with open(path.join(data_dir, train_filename), 'w') as f:
-            f.writelines(train_val_set[val_count:])        
+            f.writelines(train_val_set[val_count:])
 
     @staticmethod
     def label(
         data_dir=cfg.data_dir,
-        train_img_dir=cfg.train_img_dir, 
+        train_img_dir=cfg.train_img_dir,
         train_label_dir=cfg.train_label_dir,
         show_label_img=cfg.show_label_img,
         label_img_dir=cfg.label_img_dir,
@@ -375,7 +381,7 @@ class EastPreprocess(object):
                 line_cols[0].strip(),
                 int(line_cols[1].strip()),
                 int(line_cols[2].strip()),
-            )   
+            )
 
             ground_truth = np.zeros((height // pixel_size, width // pixel_size, 8))
             recs_xy_list = np.load(path.join(train_label_dir, img_name[:-4] + '.npy'))
@@ -482,7 +488,7 @@ def _initial_region_group(region_list):
 def _region_group(region_list):
     # 1/4优化，先对region_list分组
     # 每组中region是基于i的邻近region，有可能是连通的（还需要判断j）
-    # 不同组region之间不可能连通,只在每组region中计算连通region    
+    # 不同组region之间不可能连通,只在每组region中计算连通region
     initial_region_group = _initial_region_group(region_list)
     cnt_region_in_group = [len(_) for _ in initial_region_group]
     D, S_list, pre_cnt = [], [], 0
@@ -667,7 +673,7 @@ class EastData(object):
         """
         Parameters
         ----------
-        
+
         Returns
         ----------
         """
@@ -676,7 +682,7 @@ class EastData(object):
         pixel_num_h = img_h // pixel_size   # fixme 以4*4个像素点为一格 预测值score
         pixel_num_w = img_w // pixel_size
         # 增加一维class score
-        y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 8), dtype=np.float32)        
+        y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 8), dtype=np.float32)
         # y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
         if is_val:
             with open(os.path.join(data_dir, val_filename), 'r') as f_val:
@@ -698,7 +704,7 @@ class EastData(object):
                 gt_file = os.path.join(data_dir, train_label_dir, img_filename[:-4] + '_gt.npy')
                 y[i] = np.load(gt_file)
             yield x, y
-    
+
     @staticmethod
     def rec_loss(
         y_true,
@@ -712,7 +718,7 @@ class EastData(object):
         """
         Parameters
         ----------
-       
+
         Returns
         ----------
         """
@@ -736,7 +742,7 @@ class EastData(object):
             # （abs_didd - 0.5） 使用了L1距离计算方式 曼哈顿距离计算
             pixel_wise_smooth_l1norm = (
                 reduce_sum(
-                    v1.where(abs_diff_lt_1, 0.5 * v1.math.square(abs_diff), abs_diff - 0.5), 
+                    v1.where(abs_diff_lt_1, 0.5 * v1.math.square(abs_diff), abs_diff - 0.5),
                     axis=-1,
                 ) / n_q * weights
             )
@@ -822,22 +828,24 @@ class EastData(object):
         reduce_lr_patience=cfg.reduce_lr_patience,
         reduce_lr_verbose=cfg.reduce_lr_verbose,
         reduce_lr_min_lr=cfg.reduce_lr_min_lr,
-        # TODO：tensorboard
+        tensorboard_log_dir=cfg.tensorboard_log_dir,
+        tensorboard_write_graph=cfg.tensorboard_write_graph,
+        tensorboard_update_freq=cfg.tensorboard_update_freq,
     ):
         """
         Parameters
-        ----------  
+        ----------
         Returns
         ----------
         """
-        if type_ not in ['early_stopping', 'check_point', 'reduce_lr']:
+        if type_ not in ['early_stopping', 'check_point', 'reduce_lr', 'tensorboard']:
             return
         if type_ == 'early_stopping':
             callback = EarlyStopping(patience=early_stopping_patience, verbose=early_stopping_verbose)
         elif type_ == 'check_point':
             # TODO：默认monitor
             callback = ModelCheckpoint(
-                filepath=check_point_filepath, 
+                filepath=check_point_filepath,
                 save_best_only=True,
                 save_weights_only=True,
                 period=check_point_period,
@@ -850,6 +858,12 @@ class EastData(object):
                 patience=reduce_lr_patience,
                 verbose=reduce_lr_verbose,
                 min_lr=reduce_lr_min_lr,
+            )
+        elif type_ == 'tensorboard':
+            callback = TensorBoard(
+                log_dir=tensorboard_log_dir,
+                write_graph=tensorboard_write_graph,
+                update_freq=tensorboard_update_freq,
             )
 
         return callback

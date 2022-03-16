@@ -34,7 +34,8 @@ EPSILON = 1e-4
 _access_token = None
 _api_key = '7j3KnKhBfvL5M46GwGIIOCBB'
 _character_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic'
-_digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
+# _digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/numbers'
+_digit_request_url = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate'
 _secret_key = 'OLjSdoILVVRMiKza088n4RFpWZXd5OKK'
 _host = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={_api_key}&client_secret={_secret_key}'
 
@@ -623,7 +624,7 @@ class RecdataProcess(object):
         ----------
         """
         if ratio == 0.0:
-            return xy_list, xy_list
+            return xy_list, xy_list, 0
         # TODO：距离计算利用已有api
         # 四个向量，分别为V21, V32, V43, V14
         diff_1to3 = xy_list[:3, :] - xy_list[1:4, :]
@@ -785,8 +786,9 @@ class RecdataRecognize(object):
 
         # 分类，纠正端子后，拼接图片
         recs_list = RecdataProcess.reorder_recs(recs_list)
-        corrected_recs_list = Correction.correct_rec(recs_list)
-        joint_data = ImageProcess.joint_rec(img, img_name, corrected_recs_list)
+        # corrected_recs_list = Correction.correct_rec(recs_list)
+        # joint_data = ImageProcess.joint_rec(img, img_name, corrected_recs_list)
+        joint_data = ImageProcess.joint_rec(img, img_name, recs_list)
 
         recognize_recs_list = []
         this_joint_img_dir = path.join(joint_img_dir, img_name)

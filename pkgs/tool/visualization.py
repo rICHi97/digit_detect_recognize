@@ -13,32 +13,24 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import cfg
 from ..east import east_data
-from ..recdata import recdata_io, recdata_processing
+from ..recdata import rec, recdata_io, recdata_processing
 
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
+Rec = rec.Rec
 RecdataIO = recdata_io.RecdataIO
 
 
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
-def _get_img(img):
 
-    # TODO：路径检查
-    if isinstance(img, Image.Image):
-        pass
-    elif isinstance(img, str):
-        img = Image.open(img)
-
-    return img
-
-def _get_font(font, size=32):
+def _get_font(font, size=50):
 
     if isinstance(font, (ImageFont.ImageFont, ImageFont.FreeTypeFont, ImageFont.TransposedFont)):
         return font
     elif isinstance(font, str):
         return ImageFont.truetype(font, size)
     elif font is None:
-        return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF')
+        return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF', 32)
 
 # TODO：统一输入格式为PIL.Image
 # TODO：cfg参数化
@@ -50,12 +42,12 @@ class RecDraw(object):
     主要用于在端子排图片上绘制
     """
     @staticmethod
-    def draw_rec(xy_list_or_shape_data, img, width=2, color='black', distinguish_first_side=False):
+    def draw_rec(rec, img, width=2, color='black', distinguish_first_side=False, draw=None):
         """
         图片中绘制rec端子
         Parameters
         ----------
-        xy_list_or_shape_data：rec的四点坐标或shape data
+        rec：Rec实例
         img：PIL的Image object，端子对应图片
         with：线宽
         color：rec线颜色
@@ -64,15 +56,16 @@ class RecDraw(object):
         Returns
         ----------
         """
-        draw = ImageDraw.Draw(_get_img(img))
-        if type(xy_list_or_shape_data) is list:
-            xy_list = xy_list_or_shape_data
-        elif type(xy_list_or_shape_data) is dict:
-            xy_list = recdata_processing.Recdata.get_xy_list(xy_list_or_shape_data)
+        assert isinstance(rec, (Rec, ))
+
+        if draw is None:
+            draw = ImageDraw.Draw(img)
+        xy_list = rec.xy_list
         xy_list = recdata_processing.RecdataProcess.reorder_rec(xy_list)
         xy_list = np.reshape(xy_list, (4, 2)).tolist()
         last_edge = (xy_list[3], xy_list[0])
-        to_tuple_element = lambda list_: [tuple(element) for element in list_] 
+
+        to_tuple_element = lambda list_: [tuple(element) for element in list_]
         draw.line(to_tuple_element(xy_list), color, width)
         draw.line(to_tuple_element(last_edge), color, width)
 
@@ -85,9 +78,7 @@ class RecDraw(object):
             draw.line(to_tuple_element(first_edge), color, width)
 
     @staticmethod
-    def draw_recs(
-        recs_xy_list_or_shape_data, img, width=2, color='black', distinguish_first_side=False
-    ):
+    def draw_recs(recs_list, img, width=2, color='black', distinguish_first_side=False):
         """
         基于多个端子的四点坐标在图片中绘制端子
         Parameters
@@ -97,8 +88,11 @@ class RecDraw(object):
         Returns
         ----------
         """
-        for xy_list_or_shape_data in recs_xy_list_or_shape_data:  #pylint: disable=E1133
-            RecDraw.draw_rec(xy_list_or_shape_data, img, width, color, distinguish_first_side)
+        draw = ImageDraw.Draw(img)
+        for rec in recs_list:  #pylint: disable=E1133
+            RecDraw.draw_rec(rec, img, width, color, distinguish_first_side, draw)
+            if rec.text is not None:
+                RecDraw.draw_text(rec.text, rec.xy_list, img, draw=draw)
 
     # TODO：绘制整个文件夹中img
     @staticmethod
@@ -112,12 +106,12 @@ class RecDraw(object):
 
         Returns
         ----------
-        """   
+        """
         recs_xy_list = recdata_io.RecdataIO.read_rec_txt(txt_path_dir)
         RecDraw.draw_recs(recs_xy_list, img_dir, width, color, distinguish_first_side)
 
     @staticmethod
-    def draw_text(text, xy_list, img, color='black', font=None, precision=2):
+    def draw_text(text, xy_list, img, color='black', font=None, precision=2, draw=None):
         """
         绘制基于rec位置的文本
         Parameters
@@ -130,7 +124,8 @@ class RecDraw(object):
         ----------
         """
         center = recdata_processing.Recdata.get_center(xy_list)
-        draw = ImageDraw.Draw(_get_img(img))
+        if draw is None:
+            draw = ImageDraw.Draw(img)
         if isinstance(text, float):
             text = f'{text:.{precision}f}'
         # TODO：考虑不设置font
