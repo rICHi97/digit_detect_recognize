@@ -18,7 +18,7 @@ class DataFactory():
     """
     # TODO：整型id是否能加快速度？
     @staticmethod
-    def normalize_cubicle_id(excel_cubicle_id):
+    def normalize_cubicle_num(cubicle_num):
         """
         Parameters
         ----------
@@ -34,17 +34,17 @@ class DataFactory():
         ----------
         normalized_cubicle_id：统一规范格式后计量柜id
         """
-        e = str(excel_cubicle_id)
+        c_n = cubicle_num
         # 操作计量柜号，前两位固定为'PJ'
         truncate_index = 3
-        if '1' in e[2:4]:
+        if '1' in c_n[2:4]:
             type_ = '01' # 整体式
-        elif '2H' in e[2:4]:
+        elif '2H' in c_n[2:4]:
             type_ = '2H' # 分体互感器
             truncate_index = 4
         else:
             type_ = '02' # 分体仪表
-        voltage_class = e[truncate_index:-4]
+        voltage_class = c_n[truncate_index:-4]
         assert len(voltage_class) in (2, 3), '计量柜编号电压等级有误' # 2位或3位，35/06/038/010
         if len(voltage_class) == 2:
             # 转为10V单位，06(kV) -> 600(10V)，35(kV) -> 3500(10V)
@@ -52,14 +52,15 @@ class DataFactory():
                 100 * int(voltage_class[1]) if voltage_class[0] == '0' else 100 * int(voltage_class)
             )
         else:
+            # 038(kV) -> 38(10V)
             voltage_class = int(voltage_class[1:])
-        # 转为10V，右对齐，左侧补零，宽4位
+        # 转为10V，右对齐，左侧补零，宽4位, 3500/0600/0038/0010
         voltage_class = f'{voltage_class:0>4}'
-        structure, design = e[-4], e[-3:] # 1位结构类别，3位方案编号
+        structure, design = c_n[-4], c_n[-3:] # 1位结构类别，3位方案编号
         # 计量柜号，宽10位
-        normative_cubicle_id = f'{type_}{voltage_class}{structure}{design}'
+        normative_cubicle_num = f'{type_}{voltage_class}{structure}{design}'
 
-        return normative_cubicle_id
+        return normative_cubicle_num
 
     @staticmethod
     def get_terminal_id(cubicle_id, install_unit_id, terminal_num):
@@ -84,7 +85,7 @@ class DataFactory():
         return terminal_id
 
     @staticmethod
-    def normalize(row, excel_type):
+    def normalize(df, df_type):
         """
         规范标准化原始表格的数据，作为表格和数据库之间的中介
         Parameters
@@ -94,45 +95,111 @@ class DataFactory():
         s：Series
             端子信息：pd.Series([cubicle_id, plate_text, terminal_num, loop_num])
         """
-        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
-        column_names = cfg.excel_column_names
-        if excel_type == '端子信息':
-            column_name = column_names['cubicle_id']
-            cubicle_id = row[column_name]
-            n_cubicle_id = DataFactory.normalize_cubicle_id(cubicle_id)
-            d = {'cubicle_id': n_cubicle_id}
-            keys = ['plate_text', 'terminal_num', 'loop_num']
-        elif excel_type == '检测任务':
-            keys = []
-        elif excel_type == '人员信息':
-            keys = []
+        def func1(cubicle_num):
+            return DataFactory.normalize_cubicle_num(cubicle_num)
 
-        for key in keys:
-            column_name = column_names[key]
-            d[key] = row[column_name]
+        def func2(plate_text):
+            return ''.join(plate_text.strip()) # 去除空格
 
-        s = pd.Series(d)
+        def func3(wiring_terminal):
+            wiring_terminal = str(wiring_terminal)
+            wiring_terminal = wiring_terminal.replace(' ', '') # 去除空格
+            wiring_terminal = wiring_terminal.replace('，', ',') # 中文逗号变为英文逗号
+            return wiring_terminal
 
-        return s
+        def func4(text_symbol):
+            n_text_symbol = []
+            n_text_symbol.append(text_symbol[0]) # 同类元件中序号
+            n_text_symbol.append(text_symbol[1:3].upper()) # 元件双字母文字符号，TV/PJ
+            n_text_symbol.append(text_symbol[-1].lower()) # 相号
+            ''.join(n_text_symbol)
+            return n_text_symbol
+
+        # 屏外元件以文字符号表示
+        def func5(out_cubicle_component):
+            _ = out_cubicle_component.split('-')
+            text_symbol = _[0]
+            n_text_symbol = func4(text_symbol)
+            if len(_) == 2:
+                wiring_terminal = _[1]
+                n_out_cubicle_component = f'{n_text_symbol},{wiring_terminal}'
+            else:
+                n_out_cubicle_component = f'{n_text_symbol},'
+            return n_out_cubicle_component
+
+        # 屏内元件以安装单位+元件序号+接线端子号组成
+        def func6(in_cubicle_component):
+            _ = in_cubicle_component.split('-')
+            component_num = _[0]
+            n_component_num = f'{component_num:0>4}' #  安装单位+元件序号，103补齐为0103
+            if len(_) == 2:
+                wiring_terminal = _[1]
+                n_in_cubicle_component = f'{n_component_num},{wiring_terminal}'
+            else:
+                n_in_cubicle_component = f'{n_component_num},'
+            return n_in_cubicle_component
+
+        # 标准化计量柜编号
+        if df_type == 'Cubicle':
+
+            n_cubiclcle_num = df['num'].apply(func1) # 计量柜编号列
+            df['num'] = n_cubiclcle_num
+
+        elif df_type == 'InstallUnit':
+
+            n_cubiclcle_num = df['cubicle_num'].apply(func1) # 在这张sheet中列名为'cubicle_num'
+            n_plate_text = df['plate_text'].apply(func2) # 安装单位铭牌文本
+            df['cubicle_num'] = n_cubiclcle_num
+            df['plate_text'] = n_plate_text
+
+        elif df_type == 'ComponentInfo':
+            n_wiring_terminal = df['wiring_terminal'].apply(func3)
+            df['wiring_terminal'] = n_wiring_terminal
+
+        elif df_type == 'Component':
+            n_cubiclcle_num = df['cubicle_num'].apply(func1) # 在这张sheet中列名为'cubicle_num'
+            n_text_symbol = df['text_symbol'].apply(func4)
+            df['cubicle_num'] = n_cubiclcle_num
+            df['text_symbol'] = n_text_symbol
+
+        elif df_type == 'Connection':
+            n_cubiclcle_num = df['cubicle_num'].apply(func1) # 在这张sheet中列名为'cubicle_num'
+            n_plate_text = df['plate_text'].apply(func2) # 安装单位铭牌文本
+            n_out_cubicle_component = df['out_cubicle_component'].apply(func5) # 屏外元件及端子
+            n_in_cubicle_component = df['in_cubicle_component'].apply(func6) # 屏内元件及端子
+            df['cubicle_num'] = n_cubiclcle_num
+            df['plate_text'] = n_plate_text
+            df['out_cubicle_component'] = n_out_cubicle_component
+            df['in_cubicle_component'] = n_in_cubicle_component
+
+        n_df = df
+
+        return n_df
 
     @staticmethod
-    def create_data(n_df, excel_type):
+    def create_data(excel):
         """
         创建直接用于插入数据库的数据。
         难点是data需要和插入数据中Field顺序一致
         Parameters
         ----------
-        n_df：规范标准化后的表格df
+        excel：excel_db_io.Excel
 
         Returns
         ----------
         model_data_dict：
             dict，key = model_type，value = [(fields_data)]
         """
-        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
-        model_data_dict = {}
+        n_df_dict = {} # 标准化df字典
+        df_dict, excel_type = excel.df_dict, excel.excel_type
 
-        if excel_type == '端子信息':
+        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
+
+        if excel_type == '二次回路信息表':
+
+            for df_type in ('Cubicle', 'InstallUnit', 'ComponentInfo', 'Component', 'Connection'):
+                df = df_dict[df_type]
+                n_df = DataFactory.normalize(df, df_type)
 
             temp_connections = []
             cubicles, install_units, terminals, loops, connections = [], [], [], [], []

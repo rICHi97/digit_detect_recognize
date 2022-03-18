@@ -13,8 +13,10 @@ import pandas as pd
 
 from . import cfg, data_factory, my_database
 
-_excel_paths = cfg.excel_paths
-_excel_types = cfg.excel_types
+excel_paths = cfg.excel_paths
+excel_types = cfg.excel_types
+excel_args = cfg.excel_args
+
 DataFactory = data_factory.DataFactory
 
 
@@ -22,26 +24,48 @@ DataFactory = data_factory.DataFactory
 # TODO：转为h5文件，比较差异行，更新数据
 class Excel(object):
     """
-    表格基础类
+    表格基础类，返回包含多张标准格式df的dict
     """
     def __init__(self, excel_path, excel_type):
+
+        assert excel_type in excel_types, f'excel_type不能为{excel_type}'
+
+        sheet_args = excel_args[excel_type]
+
+        # {'Cubicle': '计量柜信息表', }
+        sheet_names = {}
+        for key, value in sheet_args.items():
+            sheet_names[key] = value['sheet_name']
+
+        # 默认表格第一行作为header，无index
         with pd.ExcelFile(excel_path) as xlsx:
-            # 默认表格只含1张sheet，第一行作为header，无index
-            # 无需usecols参数，在后续加工中调用对应数据
-            assert excel_type in _excel_types, f'excel_type不能为{excel_type}'
-            self.df = pd.read_excel(xlsx).dropna(how='all')
-            self.excel_type = excel_type
+            df_dict = pd.read_excel(xlsx, sheet_name=list(sheet_names.values()))
+
+        self.df_dict = {}
+        for key, value in sheet_args.items():
+
+            # 形参和实参，按实参冲df取列，转为以形参为标准列名的df
+            columns_param = [column for column in value.keys() if column != 'sheet_name']
+            columns_arg = [value[param] for param in columns_param]
+
+            sheet_name = value['sheet_name']
+            df = df_dict[sheet_name][columns_arg].dropna(how='all')
+            df.columns = columns_param
+            self.df_dict[key] = pd.DataFrame(df, columns=columns_param)
+
+        self.excel_type = excel_type
 
 def _excel2db(excel):
     # TODO：pd的apply的func只接受df作为第一个参数？
     # excel -> normative_df -> model
     # normative_df规范统一表格数据格式
-    normative_df = excel.df.apply(
-        DataFactory.normalize,
-        axis=1,
-        excel_type=excel.excel_type,
-    )
-    model_data_dict = DataFactory.create_data(normative_df, excel.excel_type)
+    # normative_df = excel.df.apply(
+    #     DataFactory.normalize,
+    #     axis=1,
+    #     excel_type=excel.excel_type,
+    # )
+    # model_data_dict = DataFactory.create_data(normative_df, excel.excel_type)
+    model_data_dict = DataFactory.create_data(excel)
     my_database.store(model_data_dict)
 
 def excel2db():
@@ -53,12 +77,13 @@ def excel2db():
     Returns
     ----------
     """
+    # 移除之前数据库文件
     if path.exists(cfg.database_path):
         my_database.close()
         os.remove(cfg.database_path)
     my_database.create_tables()
-    for excel_type in ('端子信息', ):
-        excel = Excel(_excel_paths[excel_type], excel_type)
+    for excel_type in ('二次回路信息表', ):
+        excel = Excel(excel_paths[excel_type], excel_type)
         _excel2db(excel)
 
 @staticmethod

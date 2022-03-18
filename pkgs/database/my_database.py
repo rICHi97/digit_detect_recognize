@@ -74,53 +74,65 @@ class Cubicle(BaseModel):
     """
     计量柜表
     """
-    id_ = FixedCharField(primary_key=True) # 计量柜型号规范化后作为主码id
+    id_ = FixedCharField(primary_key=True) # 计量柜型号规范化后作为主码id，长10位
 
 
 class InstallUnit(BaseModel):
     """
     安装单位表
     """
-    id_ = IntegerField(primary_key=True) # 主码自增
+    id_ = FixedCharField(primary_key=True) # 计量柜id + 2位安装单位序号 = 安装单位id，长12位
+    num = IntegerField() # 安装单位序号
     plate_text = CharField() # 安装单位铭牌文本
-    cubicle = ForeignKeyField(Cubicle, backref='install') # 计量柜。同Terminal，1对多
+    cubicle = ForeignKeyField(Cubicle, backref='install_units') # 计量柜。1计量柜对多安装单位
+
+
+class Component(BaseModel):
+    """
+    元件表，假定互感器三相二次绕组，每相为一个元件，TVa, TVb, TVc，暂不考虑中性点，暂不考虑不同型号
+    规定两类元件：电压互感器TV，电能表PJ，文字符号格式规定为元件同类序号+ 元件双字符 + 相号
+    规定都为三相元件，每一相的接线端子都一致，TVa, TVb, TVc都属于TV类型元件
+    """
+    id_ = FixedCharField(primary_key=True) # 安装单位id + 2位元件序号 = 元件id，长14位
+    num = IntegerField() # 元件在安装单位中的序号
+    text_symbol = CharField() # 元件文字符号
+    type_ = CharField() # 元件类型，主要是电压互感器器和电表，TV/DB
+    wiring_terminal = CharField() # 元件的接线端子，区别与端子排中端子
+    install_unit = ForeignKeyField(InstallUnit, backref='components') # 安装单位。1安装单位对多元件
 
 
 class Terminal(BaseModel):
     """
     端子表
     """
-    # 端子id，由计量柜id + 安装单位id + 端子编号得到
-    id_ = FixedCharField(primary_key=True)
+    id_ = FixedCharField(primary_key=True) # 端子id，安装单位id + 3位端子编号得到，长15位
     num = IntegerField() # 端子编号
-    # 安装单位id。1对多，将联系归到多侧，加上1侧主码
-    install_unit = ForeignKeyField(InstallUnit, backref='terminal')
+    install_unit = ForeignKeyField(InstallUnit, backref='terminals') # 安装单位id。1对多，将联系归到多侧，加上1侧主码
 
 
-class Loop(BaseModel):
-    """
-    回路表
-    """
-    # 回路无需指定计量柜，回路编号在变电站内应是唯一的
-    id_ = IntegerField(primary_key=True) # 主码自增
-    num = CharField() # 回路编号
-
-
-# TODO：能否继承BaseModel同时重新赋值类属性
 class Connection(BaseModel):
     """
-    连接关系表，m对n
+    连接关系表，1个端子 连接 n个屏外元件-端子/电缆编号/屏外回路编号/屏内元件-端子
     """
+    # 每一条数据为连接元组，(端子，屏外元件-端子/电缆编号/屏外回路编号/屏内元件-端子)
     id_ = IntegerField(primary_key=True) # 主键
-    terminal = ForeignKeyField(Terminal)
-    loop = ForeignKeyField(Loop)
+    terminal = ForeignKeyField(Terminal, backref='connections') # 不可为空，这要求excel中计量柜编号、安装单位文本、端子编号不为空
+    type_ = CharField() # 连接类型，分为连接回路/连接电缆/连接元件/连接端子四类
 
-    class Meta:
+    # 将四类连接中的端子连接目标归为一个字段，格式规定：
+    # 连接回路：'A411'
+    # 连接电缆：'KVV-4X1.5'
+    # 连接元件：元件id+元件接线端子，'元件id + 2位接线端子'
+    # 连接端子：直接连接别的安装单位中的端子，'端子id'
+    target = CharField()
+
+    class Meta:  #pylint: disable=R0903,C0115
         indexes = (
-            (('id_', 'terminal', 'loop'), True),
+            (('id_', 'terminal', 'type_'), True),
         )
 
 
+# TODO：设置backref
 class TaskOperation(BaseModel):
     """
     检测任务主体、操作人员主体、涉及端子主体联系表
@@ -130,20 +142,36 @@ class TaskOperation(BaseModel):
     operator = ForeignKeyField(Operator)
     terminal = ForeignKeyField(Terminal)
 
-    class Meta:
+    class Meta:  #pylint: disable=R0903,C0115
         indexes = (
             (('task', 'operator', 'terminal'), True),
         )
 
 _models = {
-    'Task': (Task, ),
-    'Operator': (Operator, ),
+    'Task': (Task, [Task.id_, Task.type_, Task.deliver_time]),
+    'Operator': (Operator, [Operator.id_, Operator.name, Operator.tel]),
     'Cubicle': (Cubicle, [Cubicle.id_]),
     'InstallUnit': (InstallUnit, [InstallUnit.id_, InstallUnit.plate_text, InstallUnit.cubicle]),
+    'Component': (
+        Component,
+        [
+            Component.id_,
+            Component.num,
+            Component.text_symbol,
+            Component.type_,
+            Component.wiring_terminal,
+            Component.install_unit
+        ]
+    ),
     'Terminal': (Terminal, [Terminal.id_, Terminal.num, Terminal.install_unit]),
-    'Loop': (Loop, [Loop.id_, Loop.num]),
-    'Connection': (Connection, [Connection.id_, Connection.terminal, Connection.loop]),
-    'TaskOperation': (TaskOperation, ),
+    'Connection': (
+        Connection,
+        [Connection.id_, Connection.terminal, Connection.type_, Connection.target]
+    ),
+    'TaskOperation': (
+        TaskOperation,
+        TaskOperation.id_, TaskOperation.task, TaskOperation.operator, TaskOperation.terminal
+    ),
 }
 
 def create_tables():  #pylint: disable=C0116
