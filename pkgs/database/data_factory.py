@@ -58,7 +58,7 @@ class DataFactory():
         voltage_class = f'{voltage_class:0>4}'
         structure, design = c_n[-4], c_n[-3:] # 1位结构类别，3位方案编号
         # 计量柜号，宽10位
-        normative_cubicle_num = f'{type_}{voltage_class}{structure}{design}'
+        normative_cubicle_num = f'PJ{type_}{voltage_class}{structure}{design}'
 
         return normative_cubicle_num
 
@@ -99,7 +99,7 @@ class DataFactory():
             return DataFactory.normalize_cubicle_num(cubicle_num)
 
         def func2(plate_text):
-            return ''.join(plate_text.strip()) # 去除空格
+            return plate_text.replace(' ', '') # 去除空格
 
         def func3(wiring_terminal):
             wiring_terminal = str(wiring_terminal)
@@ -107,12 +107,13 @@ class DataFactory():
             wiring_terminal = wiring_terminal.replace('，', ',') # 中文逗号变为英文逗号
             return wiring_terminal
 
+        # TODO：不确定如何区分相号和元件最后一个字母
         def func4(text_symbol):
             n_text_symbol = []
             n_text_symbol.append(text_symbol[0]) # 同类元件中序号
             n_text_symbol.append(text_symbol[1:3].upper()) # 元件双字母文字符号，TV/PJ
             n_text_symbol.append(text_symbol[-1].lower()) # 相号
-            ''.join(n_text_symbol)
+            n_text_symbol = ''.join(n_text_symbol)
             return n_text_symbol
 
         # 屏外元件以文字符号表示
@@ -127,17 +128,32 @@ class DataFactory():
                 n_out_cubicle_component = f'{n_text_symbol},'
             return n_out_cubicle_component
 
-        # 屏内元件以安装单位+元件序号+接线端子号组成
+        # 屏内元件以元件id,端子或端子id组成
         def func6(in_cubicle_component):
-            _ = in_cubicle_component.split('-')
+            _ = str(in_cubicle_component).split('-')
             component_num = _[0]
             n_component_num = f'{component_num:0>4}' #  安装单位+元件序号，103补齐为0103
-            if len(_) == 2:
-                wiring_terminal = _[1]
+
+            # 返回数据包含','为屏内元件，否则为端子
+            # 需要补充计量柜id才是元件id或端子id
+            if n_component_num[2:4] == '00': # 00说明为端子排元件，此时直接连接端子
+                if len(_) != 2:
+                    raise Exception(f'连接屏内端子{in_cubicle_component}错误')
+                install_unit_num = f'{n_component_num[0:2]}'
+                terminal_num = f'{_[1]:0>3}'
+                n_in_cubicle_component = f'{install_unit_num}{terminal_num}'
+
+            else: # 说明连接屏内元件
+                if len(_) == 2:
+                    wiring_terminal = _[1]
+                else:
+                    wiring_terminal = ''
                 n_in_cubicle_component = f'{n_component_num},{wiring_terminal}'
-            else:
-                n_in_cubicle_component = f'{n_component_num},'
+
             return n_in_cubicle_component
+
+        def func7(install_unit_num):
+            return f'{install_unit_num:0>2}'
 
         # 标准化计量柜编号
         if df_type == 'Cubicle':
@@ -149,8 +165,10 @@ class DataFactory():
 
             n_cubiclcle_num = df['cubicle_num'].apply(func1) # 在这张sheet中列名为'cubicle_num'
             n_plate_text = df['plate_text'].apply(func2) # 安装单位铭牌文本
+            n_install_unit_num = df['num'].apply(func7) # 安装单位编号
             df['cubicle_num'] = n_cubiclcle_num
             df['plate_text'] = n_plate_text
+            df['num'] = n_install_unit_num
 
         elif df_type == 'ComponentInfo':
             n_wiring_terminal = df['wiring_terminal'].apply(func3)
@@ -176,6 +194,7 @@ class DataFactory():
 
         return n_df
 
+    # TODO：数据正确性检查，或者依赖数据库约束
     @staticmethod
     def create_data(excel):
         """
@@ -190,81 +209,110 @@ class DataFactory():
         model_data_dict：
             dict，key = model_type，value = [(fields_data)]
         """
-        n_df_dict = {} # 标准化df字典
         df_dict, excel_type = excel.df_dict, excel.excel_type
-
         assert excel_type in excel_types, f'excel_type不能为{excel_type}'
 
+        n_df_dict, model_data_dict = {}, {} # 标准化df字典，模型数据字典
+        # data_list中查询包含字段cond的data的return_index项，认定只有一个data满足条件
+        cond_data = (
+            lambda data_list, cond, return_index: (
+                [data for data in data_list if cond in data][0][return_index]
+            )
+        )
         if excel_type == '二次回路信息表':
 
             for df_type in ('Cubicle', 'InstallUnit', 'ComponentInfo', 'Component', 'Connection'):
                 df = df_dict[df_type]
                 n_df = DataFactory.normalize(df, df_type)
+                n_df_dict[df_type] = n_df
 
-            temp_connections = []
-            cubicles, install_units, terminals, loops, connections = [], [], [], [], []
+            # model = Cubicle
+            # data = id_, location
+            data_df = n_df_dict['Cubicle']
+            data_list = data_df.apply(lambda row: (row['num'], row['location']), axis=1).to_list()
+            model_data_dict['Cubicle'] = data_list
 
-            c_ids = n_df['cubicle_id'].unique() # 多条数据指向同一个计量柜
-            i_id = 0
-            for c_id in c_ids:
-                # 计量柜
-                c_data = (c_id, ) # C.id_
-                cubicles.append(c_data)
+            # model = InstallUnit
+            # model_data = id_, num, plate_text, cubicle
+            data_df = n_df_dict['InstallUnit']
+            data_list = data_df.apply(
+                lambda row: (
+                    f"{row['cubicle_num']}{row['num']:>02}",
+                    row['num'],
+                    row['plate_text'],
+                    row['cubicle_num'],
+                ),
+                axis=1,
+            ).to_list()
+            model_data_dict['InstallUnit'] = data_list
 
-                # 多条数据指向同一个计量柜中的同一个安装单位
-                conditon = (n_df['cubicle_id'] == c_id)
-                p_texts = n_df[conditon]['plate_text'].unique()
-                # 手动设置主键为i，即数据次序，方便设置外键
-                for p_text in p_texts:
-                    i_data = (i_id, p_text, c_id) # I.id_, I.p_text, I.c_id，通过id连接外键
-                    install_units.append(i_data)
-
-                    # 多条数据指向同一个计量柜中的同一个安装单位中的同一个端子
-                    conditon = (n_df['cubicle_id'] == c_id) & (n_df['plate_text'] == p_text)
-                    t_nums = n_df[conditon]['terminal_num'].unique()
-                    for t_num in t_nums:
-                        t_num = int(t_num)
-                        t_id = DataFactory.get_terminal_id(c_id, i_id, t_num)
-                        t_data = (t_id, t_num, i_id) # T.id_, T.num, T.i_id
-                        terminals.append(t_data)
-
-                        # 查询这个端子对应的连接回路
-                        conditon = (conditon) & (n_df['terminal_num'] == t_num)
-                        connected_loop_nums = n_df[conditon]['loop_num']
-                        for connected_loop_num in connected_loop_nums:
-                            # 存储端子id和回路文本
-                            connection = (t_id, connected_loop_num)
-                            temp_connections.append(connection)
-                    i_id += 1
-
-            # 端子连接回路是一个难点，因为是多对多
-            # 逐个检查连接，同时生成loops和connections
-            l_id, num2id = 0, {}
-            for i, connection in enumerate(temp_connections):
-                t_id, loop_num = connection[0], connection[1]
-
-                # 此时是一条新的回路
-                if loop_num not in num2id.keys():
-                    l_data = (l_id, loop_num) # L.id_, L.num
-                    loops.append(l_data)
-                    l_id += 1
-                    num2id[loop_num] = l_id
-
-                # 无论新老回路，这个连接都是连接表中的一条有效数据
-                # 不能直接插入l_id
-                # 举例：三条连接分别是回路1、2、1；第3条连接验证后，l_id是2，但该条连接回路1对应id应是1
-                # i是连接的次序作为主键，查询该条回路对应次序作为回路外键，该条连接中的t_id作为端子外键
-                # Connection.id,  Connection.terminal_id, Connection.loop_id
-                connection_data = (i, t_id, num2id[loop_num])
-                connections.append(connection_data)
-
-            # 数据顺序不能颠倒，因为有外键关系
-            model_data_dict = {
-                'Cubicle': cubicles,
-                'InstallUnit': install_units,
-                'Terminal': terminals,
-                'Loop': loops,
-                'Connection': connections
+            # model = Component
+            # model_data = id_, num, text_symbol, type_, wiring_terminal, install_unit
+            data_df = n_df_dict['ComponentInfo']
+            TV_row = data_df[data_df['type'].isin(['TV'])]
+            PJ_row = data_df[data_df['type'].isin(['PJ'])]
+            wiring_terminal_dict = {
+                'TV': TV_row['wiring_terminal'].to_list()[0],
+                'PJ': PJ_row['wiring_terminal'].to_list()[0],
             }
+            data_df = n_df_dict['Component']
+            data_list = data_df.apply(
+                lambda row: (
+                    f"{row['cubicle_num']}{row['install_unit_num']:>02}{row['num']:>02}",
+                    row['num'],
+                    row['text_symbol'],
+                    f"{row['text_symbol'][1:-1]}", # row['text_symbol'][1:-1] = component type
+                    f"{wiring_terminal_dict[row['text_symbol'][1:-1]]}",
+                    f"{row['cubicle_num']}{row['install_unit_num']:>02}",
+                ),
+                axis=1,
+            ).to_list()
+            model_data_dict['Component'] = data_list
+
+            iu_list = model_data_dict['InstallUnit']
+
+            # TODO：当未查询到安装单位时报错
+            # model = Terminal
+            # model_data = id_, num, install_unit
+            data_df = n_df_dict['Connection']
+            data_list = data_df.apply(
+                lambda row: (
+                    f"{cond_data(iu_list, row['plate_text'], 0)}{row['terminal_num']:>03}",
+                    f"{row['terminal_num']}",
+                    f"{cond_data(iu_list, row['plate_text'], 0)}",
+                ),
+                axis=1,
+            ).to_list()
+            model_data_dict['Terminal'] = data_list
+
+            # model = Connection
+            # model_data = id_, terminal, type_, target
+            data_df = n_df_dict['Connection']
+            data_list = []
+            id_ = 0
+            # terminal connect to target
+            for row in data_df.itertuples():
+                cubicle_num = getattr(row, 'cubicle_num')
+                plate_text = getattr(row, 'plate_text')
+                install_unit_id = cond_data(iu_list, plate_text, 0)
+                terminal_id = f"{install_unit_id}{getattr(row, 'terminal_num'):>03}"
+                # 连接类型
+                for type_ in (
+                    'out_cubicle_component', 'cable', 'out_cubicle_loop', 'in_cubicle_loop'
+                ):
+                    target = getattr(row, type_)
+                    if not pd.isna(target):
+                        data = (id_, terminal_id, type_, target)
+                        data_list.append(data)
+                        id_ += 1
+                target = getattr(row, 'in_cubicle_component')
+                if not pd.isna(target):
+                    # 含','的为元件，否则为端子
+                    type_ = 'in_cubicle_component' if ',' in target else 'in_cubicle_terminal'
+                    target = f'{cubicle_num}{target}'
+                    data = (id_, terminal_id, type_, target)
+                    data_list.append(data)
+                    id_ += 1
+            model_data_dict['Connection'] = data_list
 
         return model_data_dict

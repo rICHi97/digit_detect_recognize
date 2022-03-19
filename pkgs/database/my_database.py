@@ -17,6 +17,8 @@ FixedCharField = peewee.FixedCharField
 ForeignKeyField = peewee.ForeignKeyField
 IntegerField = peewee.IntegerField
 
+IntegrityError = peewee.IntegrityError
+
 Model = peewee.Model # Model对应表
 
 
@@ -75,6 +77,7 @@ class Cubicle(BaseModel):
     计量柜表
     """
     id_ = FixedCharField(primary_key=True) # 计量柜型号规范化后作为主码id，长10位
+    location = CharField() # 位置信息
 
 
 class InstallUnit(BaseModel):
@@ -117,13 +120,14 @@ class Connection(BaseModel):
     # 每一条数据为连接元组，(端子，屏外元件-端子/电缆编号/屏外回路编号/屏内元件-端子)
     id_ = IntegerField(primary_key=True) # 主键
     terminal = ForeignKeyField(Terminal, backref='connections') # 不可为空，这要求excel中计量柜编号、安装单位文本、端子编号不为空
-    type_ = CharField() # 连接类型，分为连接回路/连接电缆/连接元件/连接端子四类
+    type_ = CharField() # 连接类型，分为连接屏外元件-端子/连接电缆/连接屏外回路/连接屏内回路/连接屏内元件-端子/连接屏内端子六类
 
-    # 将四类连接中的端子连接目标归为一个字段，格式规定：
-    # 连接回路：'A411'
-    # 连接电缆：'KVV-4X1.5'
-    # 连接元件：元件id+元件接线端子，'元件id + 2位接线端子'
-    # 连接端子：直接连接别的安装单位中的端子，'端子id'
+    # 将六类连接中的端子连接目标归为一个字段，格式规定：
+    # 连接屏外元件-端子，out_cubicle_component：'1TVa,3'，端子可以为空
+    # 连接电缆，cable：'KVV-4X1.5'
+    # 连接屏外/屏内回路，out_cubicle_loop，in_cubicle_loop：'A411'
+    # 连接屏内元件-端子，in_cubicle_component：元件id+元件接线端子，'元件id, 2位接线端子'，端子可以为空
+    # 连接屏内端子，in_cubicle_terminal：端子id
     target = CharField()
 
     class Meta:  #pylint: disable=R0903,C0115
@@ -150,7 +154,7 @@ class TaskOperation(BaseModel):
 _models = {
     'Task': (Task, [Task.id_, Task.type_, Task.deliver_time]),
     'Operator': (Operator, [Operator.id_, Operator.name, Operator.tel]),
-    'Cubicle': (Cubicle, [Cubicle.id_]),
+    'Cubicle': (Cubicle, [Cubicle.id_, Cubicle.location]),
     'InstallUnit': (InstallUnit, [InstallUnit.id_, InstallUnit.plate_text, InstallUnit.cubicle]),
     'Component': (
         Component,
@@ -200,10 +204,13 @@ def store(model_data_dict):
     for key, value in model_data_dict.items():
         assert key in _models.keys(), f'model_type不能为{key}'
         model, fields = _models[key][0], _models[key][1]
-        connect()
         with db.atomic() as transaction:
-            model.insert_many(value, fields).execute()
-        close()
+            try:
+                model.insert_many(value, fields).execute()
+            except IntegrityError:
+                print('IntegrityError')
+                break
+    close()
 
 if __name__ == '__main__':
     pass

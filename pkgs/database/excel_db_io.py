@@ -56,15 +56,6 @@ class Excel(object):
         self.excel_type = excel_type
 
 def _excel2db(excel):
-    # TODO：pd的apply的func只接受df作为第一个参数？
-    # excel -> normative_df -> model
-    # normative_df规范统一表格数据格式
-    # normative_df = excel.df.apply(
-    #     DataFactory.normalize,
-    #     axis=1,
-    #     excel_type=excel.excel_type,
-    # )
-    # model_data_dict = DataFactory.create_data(normative_df, excel.excel_type)
     model_data_dict = DataFactory.create_data(excel)
     my_database.store(model_data_dict)
 

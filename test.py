@@ -6,11 +6,6 @@ Created on Thu Sep 30 22:24:20 2021
 """
 import time
 
-from pkgs.tool import code_testing
+from pkgs.database import excel_db_io
 
-CodeTest = code_testing.CodeTest
-# TODO：编号10有问题A
-start = time.process_time()
-CodeTest.test_end_to_end()
-end = time.process_time()
-print(end - start)
+n_df_dict = excel_db_io.excel2db()
