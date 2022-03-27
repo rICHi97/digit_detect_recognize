@@ -12,7 +12,7 @@ Created on 2021-11-19 00:36:11
 import os
 from os import path
 
-from keras import  applications, layers, optimizers, preprocessing, Input, Model
+from keras import  applications, layers, optimizers, preprocessing, utils, Input, Model
 import numpy as np
 from PIL import Image
 from tensorflow.compat import v1  #pylint: disable=E0401
@@ -50,7 +50,9 @@ def _init_environ():
     config.gpu_options.allow_growth = True  #pylint: disable=E1101
     session = Session(config=config)
 
+
 # TODO：增加一个输出通道，判断是标签或铭牌
+# TODO：增加主干网
 class EastNet(object):
     """
     EastNet的predict和train依赖一个网络
@@ -59,11 +61,13 @@ class EastNet(object):
     """
     def __init__(
         self,
+        backdone='vgg',
         feature_layers_range=cfg.feature_layers_range,
         feature_layers_num=cfg.feature_layers_num,
     ):
         self.feature_layers_range = feature_layers_range
         self.feature_layers_num = feature_layers_num
+        # TODO：输入尺寸设置
         self.input_img = Input(
             name='input_img', shape=(None, None, cfg.num_channels), dtype='float32'
         )
@@ -149,6 +153,18 @@ class EastNet(object):
         )
 
         return Model(inputs=self.input_img, outputs=east_detect)
+
+    def plot(self):
+        utils.plot_model(
+            self.east_model,
+            to_file='model.png',
+            show_shapes=True,
+            # show_dtype=True,
+            show_layer_names=True,
+            dpi=200,
+            # expand_nested=True,
+            # show_layer_activations=True,
+        )
 
     def train(
         self,

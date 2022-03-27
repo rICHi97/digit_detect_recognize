@@ -12,6 +12,7 @@ from . import cfg
 excel_types = cfg.excel_types
 
 
+# TODO：从标准计量柜id得到原始id
 class DataFactory():
     """
     主要处理数据本身
@@ -32,7 +33,7 @@ class DataFactory():
 
         Returns
         ----------
-        normalized_cubicle_id：统一规范格式后计量柜id
+        cubicle_id：统一规范格式后计量柜id
         """
         c_n = cubicle_num
         # 操作计量柜号，前两位固定为'PJ'
@@ -58,9 +59,9 @@ class DataFactory():
         voltage_class = f'{voltage_class:0>4}'
         structure, design = c_n[-4], c_n[-3:] # 1位结构类别，3位方案编号
         # 计量柜号，宽10位
-        normative_cubicle_num = f'PJ{type_}{voltage_class}{structure}{design}'
+        cubicle_id = f'PJ{type_}{voltage_class}{structure}{design}'
 
-        return normative_cubicle_num
+        return cubicle_id
 
     @staticmethod
     def get_terminal_id(cubicle_id, install_unit_id, terminal_num):
@@ -238,7 +239,7 @@ class DataFactory():
             data_list = data_df.apply(
                 lambda row: (
                     f"{row['cubicle_num']}{row['num']:>02}",
-                    row['num'],
+                    int(row['num']),
                     row['plate_text'],
                     row['cubicle_num'],
                 ),
@@ -259,7 +260,7 @@ class DataFactory():
             data_list = data_df.apply(
                 lambda row: (
                     f"{row['cubicle_num']}{row['install_unit_num']:>02}{row['num']:>02}",
-                    row['num'],
+                    int(row['num']),
                     row['text_symbol'],
                     f"{row['text_symbol'][1:-1]}", # row['text_symbol'][1:-1] = component type
                     f"{wiring_terminal_dict[row['text_symbol'][1:-1]]}",
@@ -278,7 +279,7 @@ class DataFactory():
             data_list = data_df.apply(
                 lambda row: (
                     f"{cond_data(iu_list, row['plate_text'], 0)}{row['terminal_num']:>03}",
-                    f"{row['terminal_num']}",
+                    int(f"{row['terminal_num']}"),
                     f"{cond_data(iu_list, row['plate_text'], 0)}",
                 ),
                 axis=1,
@@ -315,4 +316,29 @@ class DataFactory():
                     id_ += 1
             model_data_dict['Connection'] = data_list
 
+        elif excel_type == '人员信息表':
+
+            for df_type in ('Operator', ):  #pylint: disable=C0325
+                df = df_dict[df_type]
+                n_df = DataFactory.normalize(df, df_type)
+                n_df_dict[df_type] = n_df
+
+            # model = Operator
+            # data = name_, tel
+            data_df = n_df_dict['Operator']
+            data_list = data_df.apply(lambda row: (row['name'], row['tel']), axis=1).to_list()
+            id_list = [(i, ) for i in range(len(data_list))]
+            data_list = [id_list[i] + data_list[i] for i in range(len(data_list))]
+            model_data_dict['Operator'] = data_list
+
         return model_data_dict
+
+    @staticmethod
+    def three_phase_components(all_components):
+        # 去除相号a, b, c
+        _ = {component[0][:-1] for component in all_components}
+        three_phase_components = {
+            'TV': [component for component in _ if 'TV' in component],
+            'PJ': [component for component in _ if 'PJ' in component],
+        }
+        return three_phase_components

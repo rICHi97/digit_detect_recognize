@@ -13,16 +13,14 @@ from pkgs.ui import ui_app, shared_core
 QApplication = QtWidgets.QApplication
 
 Inspection = ui_app.Inspection
-SystemManage = ui_app.SystemManage
+ManageSystem = ui_app.ManageSystem
 SharedCore = shared_core.SharedCore
 
 # TODO：研究是否有别的方式显示网页
 # TODO：第一次运行完成后，不能再次运行
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    app_inspection = Inspection()
-    app_system_manage = SystemManage()
-    app_inspection.connect['web_finish_username_pwd'](app_system_manage.update_label)
+    app_system_manage = ManageSystem()
+    # app_system_manage.main_window.update_db_display('Operator', ['张三', '1'])
     app_system_manage.show()
-    app_inspection.show()
     sys.exit(app.exec_())

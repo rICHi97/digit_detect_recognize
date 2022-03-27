@@ -267,6 +267,7 @@ class EastPreprocess(object):
                 xy_list = RecdataProcess.reorder_rec(xy_list)
                 four_points = xy_list.copy()
                 xy_list = np.reshape(xy_list, -1).tolist()
+                # TODO：检查类别
                 if anno_array[8] == 'terminal': # TODO：append到最后
                     xy_list.insert(1, 0)
                 elif anno_array[8] == 'plate':

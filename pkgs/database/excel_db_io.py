@@ -32,7 +32,7 @@ class Excel(object):
 
         sheet_args = excel_args[excel_type]
 
-        # {'Cubicle': '计量柜信息表', }
+        # 获取对应工作表名，格式：{'Cubicle': '计量柜信息表', }
         sheet_names = {}
         for key, value in sheet_args.items():
             sheet_names[key] = value['sheet_name']
@@ -44,7 +44,7 @@ class Excel(object):
         self.df_dict = {}
         for key, value in sheet_args.items():
 
-            # 形参和实参，按实参冲df取列，转为以形参为标准列名的df
+            # 形参和实参，按实参从df取列，转为以形参为标准列名的df
             columns_param = [column for column in value.keys() if column != 'sheet_name']
             columns_arg = [value[param] for param in columns_param]
 
@@ -57,7 +57,8 @@ class Excel(object):
 
 def _excel2db(excel):
     model_data_dict = DataFactory.create_data(excel)
-    my_database.store(model_data_dict)
+    d = my_database.store(model_data_dict)
+    return d
 
 def excel2db():
     """
@@ -73,9 +74,10 @@ def excel2db():
         my_database.close()
         os.remove(cfg.database_path)
     my_database.create_tables()
-    for excel_type in ('二次回路信息表', ):
+    for excel_type in ('二次回路信息表', '人员信息表'):
         excel = Excel(excel_paths[excel_type], excel_type)
-        _excel2db(excel)
+        d = _excel2db(excel)
+    return d
 
 @staticmethod
 def db2excel(mdoel_type):

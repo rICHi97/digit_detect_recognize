@@ -12,11 +12,12 @@ pragmas = {
 	'ignore_check_constraints': 0,
 }
 
-excel_types = ['二次回路信息表', '检测任务', '人员信息']
+excel_types = ['二次回路信息表', '检测任务', '人员信息表']
 # excel_db_io，data_factory
 # 表格路径
 excel_paths = {
 	'二次回路信息表': './resource/test_data/excel/二次回路信息表.xlsx',
+	'人员信息表': './resource/test_data/excel/人员信息表.xlsx',
 }
 # 表格参数
 # {
@@ -66,6 +67,13 @@ excel_args = {
 			'terminal_num': '端子编号',
 			'in_cubicle_loop': '屏内回路编号',
 			'in_cubicle_component': '屏内元件-端子',
+		}
+	},
+	'人员信息表': {
+		'Operator': {
+			'sheet_name': '人员信息表',
+			'name': '检验人员姓名',
+			'tel': '联系方式',
 		}
 	},
 }

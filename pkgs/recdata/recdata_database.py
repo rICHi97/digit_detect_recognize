@@ -11,7 +11,6 @@ from ..database import data_factory, my_database
 DataFactory = data_factory.DataFactory
 Connection = my_database.Connection
 InstallUnit = my_database.InstallUnit
-Loop = my_database.Loop
 Terminal = my_database.Terminal
 
 # TODO：研究join
@@ -95,25 +94,6 @@ class RecdataDB(object):
             loops_id.append(connection.loop.id_)
 
         return loops_id
-
-    @staticmethod
-    def get_loop_num(loop_id):
-        """
-        Parameters
-        ----------
-        loop_id：回路id
-
-        Returns
-        ----------
-        """
-        loop = (
-            Loop
-            .select()
-            .where(Loop.id_ == loop_id)
-            .get()
-        )
-        loop_num = loop.num
-        return loop_num
 
     def find_terminal(self, group_list, *loops_num):
         pass

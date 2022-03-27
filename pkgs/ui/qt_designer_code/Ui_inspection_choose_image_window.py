@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'D:\GitHub_Project\ERIC_WORKSPACE\terminal_detect_recognize\choose_image_window.ui'
+# Form implementation generated from reading ui file 'D:\GitHub_Project\ERIC_WORKSPACE\terminal_detect_recognize\inspection_choose_image_window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.5
 #

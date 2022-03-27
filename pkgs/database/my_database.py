@@ -69,7 +69,8 @@ class Operator(BaseModel):
     """
     id_ = IntegerField(primary_key=True) # 人员id
     name = CharField()
-    tel = IntegerField()
+    tel = CharField()
+    password = IntegerField(null=True) # 初次登录时设置密码
 
 
 class Cubicle(BaseModel):
@@ -155,7 +156,10 @@ _models = {
     'Task': (Task, [Task.id_, Task.type_, Task.deliver_time]),
     'Operator': (Operator, [Operator.id_, Operator.name, Operator.tel]),
     'Cubicle': (Cubicle, [Cubicle.id_, Cubicle.location]),
-    'InstallUnit': (InstallUnit, [InstallUnit.id_, InstallUnit.plate_text, InstallUnit.cubicle]),
+    'InstallUnit': (
+        InstallUnit,
+        [InstallUnit.id_, InstallUnit.num, InstallUnit.plate_text, InstallUnit.cubicle],
+    ),
     'Component': (
         Component,
         [
@@ -201,16 +205,17 @@ def store(model_data_dict):
     Returns
     ----------
     """
-    for key, value in model_data_dict.items():
-        assert key in _models.keys(), f'model_type不能为{key}'
-        model, fields = _models[key][0], _models[key][1]
-        with db.atomic() as transaction:
+    with db.atomic() as transaction:
+        for key, value in model_data_dict.items():
+            model, fields = _models[key][0], _models[key][1]
             try:
                 model.insert_many(value, fields).execute()
-            except IntegrityError:
-                print('IntegrityError')
+            except IntegrityError as inst:
+                print(f'{key}IntegrityError')
+                print(inst)
                 break
     close()
+    return model_data_dict
 
 if __name__ == '__main__':
     pass

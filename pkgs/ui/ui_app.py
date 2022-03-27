@@ -7,143 +7,73 @@ Created on 2021-12-13 15:28:08
 """
 from os import path
 
-from PyQt5 import QtCore, QtWidgets, QtWebChannel, QtWebEngineWidgets
+from PyQt5 import QtCore, QtNetwork, QtWidgets, QtWebChannel, QtWebEngineWidgets, QtWebSockets
 
 from . import cfg, my_thread, shared_core
-from .window import detect_recognize, system_manage
+from .window import manage_system
+from .. database import data_retrieving, data_factory, excel_db_io
 
 QFileInfo = QtCore.QFileInfo
 QUrl = QtCore.QUrl
+QHostAddress = QtNetwork.QHostAddress
 QApplication = QtWidgets.QApplication
 QMainWindow = QtWidgets.QMainWindow
 QWebEngineView = QtWebEngineWidgets.QWebEngineView
 QWebChannel = QtWebChannel.QWebChannel
+QWebSocketServer = QtWebSockets.QWebSocketServer
 
 DetectRecognizeThread = my_thread.DetectRecognizeThread
-LoadThread = my_thread.LoadThread
 SharedCore = shared_core.SharedCore
+LoadThread = my_thread.LoadThread
+DataRetrieve = data_retrieving.DataRetrieve
+DataFactory = data_factory.DataFactory
 
 RESULT_IMG_PATH = './resource/tmp.jpg'
 
-# TODO：注意temp图片，可能会调用之前识别结果，使用读入内存数据创建QImage
-# TODO：选择terminal10时识别的为terminal9图片
-# TODO：init dialog后设置parent好像会出问题，导致dialog不显示
-# 但是在初始化时给定parent参数可以设置，子窗口会在父窗口的中心出现
-class MainApp():
 
-    ConnectDBWindow = detect_recognize.ConnectDBWindow
-    ChooseIMGWindow = detect_recognize.ChooseIMGWindow
-    InitWindow = detect_recognize.InitWindow
-    MainWindow = detect_recognize.MainWindow
+# TODO：退出程序时确保关闭数据库
+class ManageSystem():
 
-    def __init__(self):
-        self.end_to_end = None
-        self.graph = None
-        self._init_ui()
-        self._setup_signal()
-
-    def _init_ui(self):
-        self.init_window = self.InitWindow()
-        self.main_window = self.MainWindow()
-        self.choose_img_window = self.ChooseIMGWindow(self.main_window.main_window)
-        self.connect_db_window = self.ConnectDBWindow(self.main_window.main_window)
-        self.detect_recognize_thread = DetectRecognizeThread()
-
-    def _setup_signal(self):
-        self.init_window.connect['init_finished'](self.init_finished)
-        self.main_window.connect['clicked_connect_db'](self.connect_db_window.show)
-        self.main_window.connect['clicked_choose_img'](self.choose_img_window.show)
-        self.main_window.connect['clicked_start_recognize'](self.start)
-        self.choose_img_window.connect['finish_choose_img'](self.update_img)
-        self.connect_db_window.connect['finish_connect_db'](self.update_db_status)
-        self.detect_recognize_thread.finished.connect(self.detect_recognize_finished)
-
-    def init_finished(self):
-        """
-        初始化完成
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        self.end_to_end = self.init_window.end_to_end
-        self.graph = self.init_window.graph
-        self.main_window.show()
-
-    def detect_recognize_finished(self):
-        """
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        self.main_window.set_terminal_img(RESULT_IMG_PATH)
-        self.main_window.ui_main_window.pushButton_3.setEnabled(True)
-
-    def show(self):  #pylint: disable=C0116
-        self.init_window.show()
-
-    def start(self):
-        """
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        if self.choose_img_window.img_path is None:
-            # TODO：弹出msg_box提醒
-            pass
-        else:
-            self.main_window.ui_main_window.pushButton_3.setEnabled(False)
-            self.detect_recognize_thread.my_start(
-                self.end_to_end, self.graph, self.choose_img_window.img_path
-            )
-
-    def update_img(self):
-        """
-        依据选择图片窗口所选择图片，更新label
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        if self.choose_img_window.img_path is not None:
-            self.main_window.set_terminal_img(self.choose_img_window.img_path)
-
-    def update_db_status(self):
-        """
-        更新数据库状态
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        if self.connect_db_window.db_path is not None:
-            db_type = self.connect_db_window.db_type
-            db_path = path.basename(self.connect_db_window.db_path)
-            text = f'已连接到{db_type}数据库：{db_path}'
-            self.main_window.set_db_status('connected', text)
-
-
-class SystemManage():
-
-    MainWindow = system_manage.MainWindow
+    MainWindow = manage_system.MainWindow
+    ReleaseTaskWindow = manage_system.ReleaseTaskWindow
 
     def __init__(self):
         self._init_ui()
         self._setup_signal()
+        self.server = QWebSocketServer('Manage System Server', QWebSocketServer.NonSecureMode)
+        if not self.server.listen(QHostAddress.LocalHost, 12345):
+            print('打开web socket服务器失败')
 
     def _init_ui(self):
         self.main_window = self.MainWindow()
+        self.release_task_window = self.ReleaseTaskWindow(self.main_window.main_window)
 
     def _setup_signal(self):
-        pass
+        self.main_window.connect['create_database'](self.create_database)
+        self.main_window.connect['connect_database'](self.connect_database)
+        self.main_window.connect['release_task'](self.release_task_window.show)
+
+    def create_database(self):
+        excel_db_io.excel2db()
+        # TODO：消息框
+        print('创建数据库成功')
+
+    def connect_database(self):
+        self.main_window.update_db_status('connected', '已连接到数据库')
+        all_operatos = DataRetrieve.all_operators()
+        self.update_db_display('Operator', all_operatos)
+        all_components = DataRetrieve.all_components()
+        combobox_data = {'Operator': all_operatos, 'Component': all_components}
+        self.release_task_window.update_combobox(combobox_data)
+        print('连接数据库成功')
+
+
+    def update_db_display(self, table_type, datas):
+        for data in datas:
+            self.main_window.update_db_display(table_type, data)
 
     def show(self):  #pylint: disable=C0116
         self.main_window.show()
-
-    def update_label(self, username_pwd):
-        self.main_window.update_label(username_pwd)
 
 
 class Inspection():

@@ -15,9 +15,10 @@ EastNet = east_net.EastNet
 # TODO：先从mistgpu下载npy文件检查是否正确生成label
 # python east_preprocess_train.py; sleep 300; sh /mistgpu/shutdown.sh
 if __name__ == '__main__':
-    EastPreprocess.preprocess()
-    EastPreprocess.label()
+    # EastPreprocess.preprocess()
+    # EastPreprocess.label()
     east = EastNet()
+    east.plot()
     # east.train()
     # east.predict()
     
