@@ -225,6 +225,7 @@ class ImageProcess(object):
     def random_crop(img, label, output_dir, count, boundary_thres, boundary_ratio, label_keyword):
         """
         随机裁切图片，检查标签是否在裁切区域内
+        选择图片短边边长，从中心随机裁切一个正方形，正方形边长在[min(短边边长, 100) -1, 短边边长]
         Parameters
         ----------
         img：img路径或文件夹（11/18，目前仅支持裁切文件夹中图片）

@@ -13,12 +13,12 @@ import os
 from os import path
 import random
 
-from keras import applications, callbacks, preprocessing
 import numpy as np
 from PIL import Image, ImageDraw
 from shapely import geometry
+import tensorflow as tf
+from tensorflow.keras import applications, callbacks, preprocessing
 import tqdm
-from tensorflow.compat import v1
 
 from . import cfg
 from ..recdata import recdata_processing
@@ -32,11 +32,11 @@ TensorBoard = callbacks.TensorBoard
 Polygon = geometry.Polygon
 point = geometry.Point
 tqdm = tqdm.tqdm
-cast = v1.cast
-equal = v1.equal
-reduce_mean = v1.reduce_mean
-reduce_sum = v1.reduce_sum
-sigmoid = v1.nn.sigmoid
+# 可能与python自带弄混的使用全称
+cast = tf.cast
+reduce_mean = tf.math.reduce_mean
+reduce_sum = tf.math.reduce_sum
+sigmoid = tf.math.sigmoid
 
 Recdata = recdata_processing.Recdata
 RecdataProcess = recdata_processing.RecdataProcess
@@ -725,25 +725,25 @@ class EastData(object):
         """
         # L2 distance
         def quad_norm(g_true):
-            shape = v1.shape(g_true)
-            delta_xy_matrix = v1.reshape(g_true, [-1, 2, 2])
+            shape = tf.shape(g_true)
+            delta_xy_matrix = tf.reshape(g_true, [-1, 2, 2])
             diff = delta_xy_matrix[:, 0:1, :] - delta_xy_matrix[:, 1:2, :]
-            square = v1.math.square(diff)
-            distance = v1.math.sqrt(reduce_sum(square, axis=-1))
+            square = tf.math.square(diff)
+            distance = tf.math.sqrt(reduce_sum(square, axis=-1))
             distance *= 4.0
             distance += epsilon
 
-            return v1.reshape(distance, shape[:-1])
+            return tf.reshape(distance, shape[:-1])
 
         def smooth_l1_loss(prediction_tensor, target_tensor, weights):
-            n_q = v1.reshape(quad_norm(target_tensor), v1.shape(weights))
+            n_q = tf.reshape(quad_norm(target_tensor), tf.shape(weights))
             diff = prediction_tensor - target_tensor
-            abs_diff = v1.math.abs(diff)
-            abs_diff_lt_1 = v1.math.less(abs_diff, 1)
+            abs_diff = tf.math.abs(diff)
+            abs_diff_lt_1 = tf.math.less(abs_diff, 1)
             # （abs_didd - 0.5） 使用了L1距离计算方式 曼哈顿距离计算
             pixel_wise_smooth_l1norm = (
                 reduce_sum(
-                    v1.where(abs_diff_lt_1, 0.5 * v1.math.square(abs_diff), abs_diff - 0.5),
+                    tf.where(abs_diff_lt_1, 0.5 * tf.math.square(abs_diff), abs_diff - 0.5),
                     axis=-1,
                 ) / n_q * weights
             )
@@ -763,8 +763,8 @@ class EastData(object):
         inside_beta = 1 - reduce_mean(inside_labels)
         # log + epsilon for stable cal
         inside_score_loss = reduce_mean(
-            -1 * (inside_beta * inside_labels * v1.math.log(inside_predicts + epsilon) +
-            (1 - inside_beta) * (1 - inside_labels) * v1.math.log(1 - inside_predicts + epsilon))
+            -1 * (inside_beta * inside_labels * tf.math.log(inside_predicts + epsilon) +
+            (1 - inside_beta) * (1 - inside_labels) * tf.math.log(1 - inside_predicts + epsilon))
         )
         inside_score_loss *= lambda_inside_score_loss
 
@@ -774,8 +774,8 @@ class EastData(object):
         class_predicts = sigmoid(class_logits)
         class_beta = 1 - reduce_mean(class_labels)
         class_score_loss = reduce_mean(
-            -1 * (class_beta * class_labels * v1.math.log(class_predicts + epsilon) +
-            (1 - class_beta) * (1 - class_labels) * v1.math.log(1 - class_predicts + epsilon))
+            -1 * (class_beta * class_labels * tf.math.log(class_predicts + epsilon) +
+            (1 - class_beta) * (1 - class_labels) * tf.math.log(1 - class_predicts + epsilon))
         )
         class_score_loss *= lambda_class_score_loss
 
@@ -788,13 +788,13 @@ class EastData(object):
             1 - (reduce_mean(y_true[:, :, :, 2:3]) / (reduce_mean(inside_labels) + epsilon))
         )
         vertex_predicts = sigmoid(vertex_logits)
-        pos = -1 * vertex_beta * vertex_labels * v1.math.log(vertex_predicts + epsilon)
+        pos = -1 * vertex_beta * vertex_labels * tf.math.log(vertex_predicts + epsilon)
         neg = -1 * (
-            (1 - vertex_beta) * (1 - vertex_labels) * v1.math.log(1 - vertex_predicts + epsilon)
+            (1 - vertex_beta) * (1 - vertex_labels) * tf.math.log(1 - vertex_predicts + epsilon)
         )
         # cast：向下取整
         # positive_weights返回所有内部像素为1的tensor
-        positive_weights = cast(v1.equal(y_true[:, :, :, 0], 1), v1.dtypes.float32)
+        positive_weights = cast(tf.math.equal(y_true[:, :, :, 0], 1), v1.dtypes.float32)
         side_vertex_code_loss = (
             reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) /
             (reduce_sum(positive_weights) + epsilon)
@@ -807,7 +807,7 @@ class EastData(object):
         g_hat = y_pred[:, :, :, 4:]
         g_true = y_true[:, :, :, 4:]
         # veryex_weights返回所有边界像素为1的tensor
-        vertex_weights = cast(v1.equal(y_true[:, :, :, 2], 1), v1.dtypes.float32)
+        vertex_weights = cast(tf.math.equal(y_true[:, :, :, 2], 1), v1.dtypes.float32)
         pixel_wise_smooth_l1norm = smooth_l1_loss(g_hat, g_true, vertex_weights)
         side_vertex_coord_loss = (
             reduce_sum(pixel_wise_smooth_l1norm) /

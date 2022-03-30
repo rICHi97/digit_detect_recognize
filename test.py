@@ -5,8 +5,9 @@ Created on Thu Sep 30 22:24:20 2021
 @author: LIZHi
 
 """
-import time
+import tensorflow as tf
+from tensorflow import keras
+from pkgs.east import east_net_new
 
-from pkgs.database import excel_db_io
-
-n_df_dict = excel_db_io.excel2db()
+east = east_net_new.EastNet('pva')
+# keras.utils.plot_model(east.network, 'east_model.png', show_layer_names=True)

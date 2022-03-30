@@ -1,54 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2021-11-19 00:36:11
+Created on 2022-03-29 16:50:37
 
 @author: Li Zhi
 """
-
-"""
-本模块用以进行east网络的搭建及训练工作
-"""
-# TODO：动态网络结构
 import os
 from os import path
 
-from keras import  applications, layers, optimizers, preprocessing, utils, Input, Model
 import numpy as np
 from PIL import Image
-from tensorflow.compat import v1  #pylint: disable=E0401
+from tensorflow import keras
+from tensorflow.keras import applications, layers, optimizers, preprocessing, utils
 
-from . import cfg
-from . import east_data
+from . import cfg, east_data, network
 from ..recdata import rec
 
+Input = keras.Input
+Model = keras.Model
 VGG16 = applications.vgg16.VGG16
-preprocess_input = applications.vgg16.preprocess_input
-regularizers = layers.regularizers
 BatchNormalization = layers.BatchNormalization
 Concatenate = layers.Concatenate
 Conv2D = layers.Conv2D
+Layer = layers.Layer
+MaxPooling2D = layers.MaxPooling2D
 UpSampling2D = layers.UpSampling2D
-# image = preprocessing.image  容易混淆
 Adam = optimizers.Adam
-ConfigProto = v1.ConfigProto
-logging = v1.logging
-Session = v1.Session
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 Rec = rec.Rec
-
-def _init_environ():
-
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    # os.environ['CUDA_VISIBLE_DEVICES'] = "0,1"  设置多显卡
-    # 只显示error
-    os.environ['TF_MIN_CPP_LOG_LEVEL'] = '2'
-    logging.set_verbosity(logging.ERROR)
-    config = ConfigProto()
-    config.allow_soft_placement = True
-    config.gpu_options.per_process_gpu_memory_fraction = 0.8  #pylint: disable=E1101
-    config.gpu_options.allow_growth = True  #pylint: disable=E1101
-    session = Session(config=config)
 
 
 # TODO：增加一个输出通道，判断是标签或铭牌
@@ -62,84 +41,70 @@ class EastNet(object):
     def __init__(
         self,
         backdone='vgg',
-        feature_layers_range=cfg.feature_layers_range,
-        feature_layers_num=cfg.feature_layers_num,
     ):
-        self.feature_layers_range = feature_layers_range
-        self.feature_layers_num = feature_layers_num
-        # TODO：输入尺寸设置
+        assert backdone in ('vgg', 'pva')
         self.input_img = Input(
-            name='input_img', shape=(None, None, cfg.num_channels), dtype='float32'
+            name='input_img', shape=(None, None, 3), dtype='float32',
         )
-        vgg16 = VGG16(
-            input_tensor=self.input_img, weights='imagenet', include_top=False
-        )
-        # block5_pool, block4_pool, block3_pool, block2_pool
-        self._f = [vgg16.get_layer(f'block{i}_pool').output for i in feature_layers_range]
-        # [None, blcok5_pool,...,block2_pool]
-        self._f.insert(0, None)
-        # [5, 4, 3, 2]，diff = feature_layers_range[0] - feature_layers_num = 1
-        # 将feature_layers_range按从小到大排列：2, 3, 4, 5，i是索引(base1)
-        # i + diff是第i小的值
-        self.diff = feature_layers_range[0] - feature_layers_num
-        self.east_model = self.network()
-        self.is_load_weights = False
-
-    def _g(self, i):
-        # i+diff in cfg.feature_layers_range
-        # i in (1, 2, 3), gi = unpool(hi)
-        # i = 4, gi = conv3(hi)
-        # else: error
-        if not i + self.diff in self.feature_layers_range:
-            print(f'i={i}+diff={self.diff} not in {str(self.feature_layers_range)}')
-        if i == self.feature_layers_num:
-            bn = BatchNormalization()(self._h(i))
-            return Conv2D(32, 3, activation='relu', padding='same')(bn)
-
-        return UpSampling2D((2, 2))(self._h(i))
+        if backdone == 'vgg':
+            vgg16 = VGG16(
+                input_tensor=self.input_img, weights='imagenet', include_top=False
+            )
+            features = [vgg16.get_layer(f'block{i}_pool').output for i in (2, 3, 4, 5, )]
+            self._f = {
+                1: features[3],
+                2: features[2],
+                3: features[1],
+                4: features[0],
+            }
+        elif backdone == 'pva':
+            pvanet = network.PVAnet(self.input_img)
+            features = pvanet.features
+            self._f = {
+                1: features['f1'],
+                2: features['f2'],
+                3: features['f3'],
+                4: features['f4']
+            }
+        self.network = self.create_network()
 
     def _h(self, i):
-        # i+diff in cfg.feature_layers_range
-        # i in (2, 3, 4), hi = conv3(conv1(gi-1, fi))
-        # i = 1, hi = fi
-        # f = [None, blcok5_pool,...,block2_pool]
-        if not i + self.diff in self.feature_layers_range:
-            print(f'i={i}+diff={self.diff} not in {str(self.feature_layers_range)}')
+        assert i in (1, 2, 3, 4, )
+        chs = {2: 128, 3: 64, 4: 32}
         if i == 1:
-            return self._f[i]
+            h = self._f[i]
+        else:
+            ch = chs[i]
+            concat = Concatenate(axis=-1)([self._g(i - 1), self._f[i]])
+            bn1 = BatchNormalization()(concat)
+            conv_1 = Conv2D(ch, 1, 1, activation='relu', padding='same')(bn1)
+            bn2 = BatchNormalization()(conv_1)
+            conv_3 = Conv2D(ch, 3, 1, activation='relu', padding='same')(bn2)
+            h = conv_3
+        return h
 
-        concat = Concatenate(axis=-1)([self._g(i - 1), self._f[i]])
-        bn1 = BatchNormalization()(concat)
-        conv_1 = Conv2D(128 // 2 ** (i - 2), 1, activation='relu', padding='same')(bn1)
-        bn2 = BatchNormalization()(conv_1)
-        conv_3 = Conv2D(128 // 2 ** (i - 2), 3, activation='relu', padding='same')(bn2)
+    def _g(self, i):
+        assert i in (1, 2, 3, 4, )
+        if i == 4:
+            bn = BatchNormalization()(self._h(i))
+            conv_3 = Conv2D(32, 3, activation='relu', padding='same')(bn)
+            g = conv_3
+        else:
+            g = UpSampling2D((2, 2))(self._h(i))
+        return g
 
-        return conv_3
-
-    def get_graph(self):
-        """
-        获取当前的默认图，主要是与多线程相关
-        Parameters
-        ----------
-        Returns
-        ----------
-        """
-        graph = v1.get_default_graph()
-        return graph
-
-    def network(self):
+    def create_network(self):
         """
         创建east network
         Parameters
         ----------
-
         Returns
         ----------
         keras.Model
         """
         # features_layers_range = [5, 4, 3, 2]
         # before_output = self._g(4)
-        before_output = self._g(self.feature_layers_num)
+        before_output = self._g(4)
         # Layers()
         # 增加class_score用于区分是端子铭牌还是端子编号
         inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
@@ -156,7 +121,7 @@ class EastNet(object):
 
     def plot(self):
         utils.plot_model(
-            self.east_model,
+            self.network,
             to_file='model.png',
             show_shapes=True,
             # show_dtype=True,
@@ -187,15 +152,15 @@ class EastNet(object):
         ----------
         """
         if summary:
-            self.east_model.summary()
+            self.network.summary()
         callbacks = [EastData.callbacks(type_) for type_ in callbacks]
         # TODO：研究Adam优化器
-        self.east_model.compile(
+        self.network.compile(
             loss=EastData.rec_loss,
             optimizer=Adam(lr, decay),
         )
         # TODO：新版的keras貌似已经在fit中集成了fit_generator功能，有待研究
-        self.east_model.fit_generator(
+        self.network.fit_generator(
             generator=train_generator(),
             steps_per_epoch=steps_per_epoch,
             epochs=epoch_num,
@@ -204,13 +169,13 @@ class EastNet(object):
             validation_data=val_generator(is_val=True),
             validation_steps=val_steps,
         )
-        self.east_model.save_weights(save_weights_filepath)
+        self.network.save_weights(save_weights_filepath)
 
     def load_weights(
         self,
         east_weights_filepath=cfg.east_weights_filepath,
     ):
-        self.east_model.load_weights(east_weights_filepath)
+        self.network.load_weights(east_weights_filepath)
         self.is_load_weights = True
 
     # TODO：对于尺寸较大的图片，先裁切再predict
@@ -264,11 +229,11 @@ class EastNet(object):
             array_img = preprocessing.image.img_to_array(img)
             array_img_all = np.zeros((num_img, d_height, d_width, 3))  # 封装多张图片，但在此只封装一张
             array_img_all[0] = array_img
-            tf_img = preprocess_input(array_img, mode='tf')
+            tf_img = applications.vgg16.preprocess_input(array_img, mode='tf')
             x = np.zeros((num_img, d_height, d_width, 3))
             x[0] = tf_img
             # TODO：明确输出y的shape
-            y_pred = self.east_model.predict(x)
+            y_pred = self.network.predict(x)
             y = y_pred[0]  # x_height / pixel_size * x_width / pixel_size * 8
             y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
             condition = np.greater_equal(y[:, :, 0], pixel_threshold)
@@ -292,7 +257,3 @@ class EastNet(object):
             imgs_recs_list.append(recs_list)
 
         return imgs_recs_list
-
-
-
-

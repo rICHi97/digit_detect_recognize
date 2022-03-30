@@ -18,7 +18,7 @@ if __name__ == '__main__':
     # EastPreprocess.preprocess()
     # EastPreprocess.label()
     east = EastNet()
-    east.plot()
+    # east.plot()
     # east.train()
     # east.predict()
     
