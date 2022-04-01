@@ -222,7 +222,16 @@ class ImageProcess(object):
     # TODO：根据img大小自适应裁切次数
     # TODO：cfg参数化
     @staticmethod
-    def random_crop(img, label, output_dir, count, boundary_thres, boundary_ratio, label_keyword):
+    def random_crop(
+        img,
+        label,
+        output_img_dir,
+        output_label_dir,
+        count,
+        boundary_thres,
+        boundary_ratio,
+        label_keyword,
+    ):
         """
         随机裁切图片，检查标签是否在裁切区域内
         选择图片短边边长，从中心随机裁切一个正方形，正方形边长在[min(短边边长, 100) -1, 短边边长]
@@ -231,7 +240,7 @@ class ImageProcess(object):
         img：img路径或文件夹（11/18，目前仅支持裁切文件夹中图片）
         label：label txt路径或文件夹
         output_dir：输出路径
-        count：裁切次数
+        count：裁切次数/'auto'
         boundary_thres：若相交部分占label大于boundary_thres，就视为边界label
         boundary_ratio：若边界label / 内部label > boundary_ratio，就舍弃该次裁切
         label_keyword：label必须包含的关键字
@@ -241,31 +250,36 @@ class ImageProcess(object):
         """
         def crop_img(img_filepath, label_filepath):
 
-            # TODO：裁切区域的宽高需要大于一定阈值
-            def from_label_get_crop_region(
-                label_region, img_width, img_height, x_threshold=None, y_threshold=None,
-            ):
+            def get_random_crop_region(width, height):
 
-                label_x = [label_region[2 * i] for i in range(4)]
-                label_y = [label_region[2 * i + 1] for i in range(4)]
-                # 包络label的矩形
-                label_xmin = math.floor(min(label_x))
-                label_xmax = min(math.floor(max(label_x) + 1), img_width)
-                label_ymin = math.floor(min(label_y))
-                label_ymax = min(math.floor(max(label_y) + 1), img_height)
+                max_crop_length = height if width > height else width
+                # 随机选择裁切长度
+                crop_length = (
+                    max_crop_length if max_crop_length <= 150 else
+                    random.choice(range(150, max_crop_length))
+                )
 
-                crop_region_xmin = random.randint(0, label_xmin)
-                crop_region_xmax = random.randint(label_xmax, img_width)
-                crop_region_ymin = random.randint(0, label_ymin)
-                crop_region_ymax = random.randint(label_ymax, img_height)
+                if width > height:
+                    # 随机选择裁切中心，当宽大于高时，裁切区域沿宽度方向滑动，中心y坐标不变
+                    c_x, c_y = (
+                        random.choice(range(crop_length / 2, width - crop_length / 2)),
+                        height / 2,
+                    )
+                else:
+                    c_x, c_y = (
+                        width / 2,
+                        random.choice(range(crop_length / 2, width - crop_length / 2)),
+                    )
+                left = max(int(c_x - crop_length / 2), 0)
+                right = min(int(c_x + crop_length /2), width)
+                top = max(int(c_y - crop_length / 2), 0)
+                bottom = min(int(c_y + crop_length / 2), height)
 
-                crop_region = [
-                    crop_region_xmin, crop_region_ymin, crop_region_xmax, crop_region_ymax
-                ]
+                crop_region = [left, top, right, bottom]
 
                 return crop_region
 
-            def is_label_in_crop_img(label_region, crop_region):
+            def is_label_in_crop_region(label_region, crop_region):
                 # label_region：8个数格式
                 # crop_region：4个数格式（左上，右下）
                 xmin, xmax = crop_region[0], crop_region[2]
@@ -273,9 +287,7 @@ class ImageProcess(object):
                 for i in range(4):
                     if xmin < label_region[2 * i] < xmax and ymin < label_region[2 * i + 1] < ymax:
                         continue
-                    else:
-                        return False
-
+                    return False
                 return True
 
             def update_label_region(label_region, crop_region):
@@ -296,21 +308,22 @@ class ImageProcess(object):
                 label = str(label)
                 label_region.append(label)
                 label_line = ','.join(label_region)
-                # TODO：label_line += '\n'，split取最后一个，包含了换行
 
                 return label_line
 
             with open(label_filepath, encoding='utf-8') as f:
                 label_lines = f.readlines()
 
+            #从一行记录获取区域信息
             get_region = lambda label_line: [float(point) for point in label_line.split(',')[:8]]
+            # 从一行记录获取label信息
             get_label = lambda label_line: label_line.split(',')[-1]
+            # label是否包含关键词
             is_keyword_label = (
                 lambda label_line:
-                    True if label_keyword is None or label_keyword in get_label(label_line)
-                    else False
+                    bool(label_keyword is None or label_keyword in get_label(label_line))
             )
-            # TODO：根据label筛选会导致漏标区域内其他类型label
+
             original_label_lines = label_lines.copy()
             label_lines = [line for line in label_lines if is_keyword_label(line)]
             if not label_lines:
@@ -319,12 +332,15 @@ class ImageProcess(object):
             i = 0
             img = Image.open(img_filepath)
             width, height = img.size[0], img.size[1]
+            if count == 'auto':
+                short_edge_length = min(width, height)
+                classes_coef = 10 if label_keyword == 'terminal' else 1
+                base_count = 1 * (short_edge_length // 1000 +1)
+                count = classes_coef * base_count
 
             while i < count:
-
-                random_label_line = random.choice(label_lines)
-                random_label_region = get_region(random_label_line)
-                crop_region = from_label_get_crop_region(random_label_region, width, height)
+                # 随机生成一个初步裁切区域
+                crop_region = get_random_crop_region(width, height)
                 _ = [
                         crop_region[0], crop_region[1],
                         crop_region[2], crop_region[1],
@@ -335,12 +351,11 @@ class ImageProcess(object):
                 crop_lines = []
                 cnt_interior, cnt_boundary = 0, 0
                 # TODO：需要遍历所有标签，可能需要优化
-                # 三类标签：内部，边界，外部
-                # 如果一张图片包含了太多边界标签，就舍去
+                # 三类标签：内部，边界，外部;如果一张图片包含了太多边界标签，就舍去
                 for label_line in original_label_lines:
-                # for label_line in label_lines:
                     label_region, label = get_region(label_line), get_label(label_line)
-                    if is_label_in_crop_img(label_region, crop_region):
+                    # TODO：先缓存，因为后面这些数据有可能放弃
+                    if is_label_in_crop_region(label_region, crop_region):
                         new_label_region = update_label_region(label_region, crop_region)
                         crop_line = get_label_line(new_label_region, label)
                         crop_lines.append(crop_line)
@@ -357,8 +372,8 @@ class ImageProcess(object):
                 nonlocal img_file, get_filename
                 filename = get_filename(img_file)
                 output_name = f'{filename}_{label_keyword}_{i}'
-                output_img_path = path.join(output_dir, output_name + '.jpg')
-                output_label_path = path.join(output_dir, output_name + '.txt')
+                output_img_path = path.join(output_img_dir, output_name + '.jpg')
+                output_label_path = path.join(output_label_dir, output_name + '.txt')
                 img_crop = img.crop(crop_region)
                 img_crop.save(output_img_path)
                 with open(output_label_path, 'w', encoding='utf-8') as f:

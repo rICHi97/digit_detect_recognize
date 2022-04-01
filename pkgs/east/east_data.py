@@ -8,27 +8,33 @@ Created on 2021-11-10 01:00:14
 """
 本模块用以进行east网络的数据处理，包括预处理和产生标签，data_generator；
 """
+import datetime
 import math
 import os
 from os import path
 import random
 
+import imgaug as ia
+from imgaug import augmenters as iaa
 import numpy as np
 from PIL import Image, ImageDraw
 from shapely import geometry
 import tensorflow as tf
-from tensorflow.keras import applications, callbacks, preprocessing
+from tensorflow.keras import applications, callbacks, layers, preprocessing
 import tqdm
 
 from . import cfg
 from ..recdata import recdata_processing
 
+datetime = datetime.datetime
+Sequential = iaa.Sequential
 preprocess_input = applications.vgg16.preprocess_input
 EarlyStopping = callbacks.EarlyStopping
 LearningRateScheduler = callbacks.LearningRateScheduler
 ModelCheckpoint = callbacks.ModelCheckpoint
 ReduceLROnPlateau = callbacks.ReduceLROnPlateau
 TensorBoard = callbacks.TensorBoard
+Normalization = layers.Normalization
 Polygon = geometry.Polygon
 point = geometry.Point
 tqdm = tqdm.tqdm
@@ -550,6 +556,42 @@ def _region_neighbor(region_set):
 
     return neighbor
 
+def _augmenter():
+    ia.seed(random.randint(0, 19970923))
+    seq = iaa.Sequential([
+        iaa.SomeOf(
+            (0, 3),
+            [
+                # 随机高斯模糊、均值模糊、中值模糊
+                iaa.OneOf([
+                    iaa.GaussianBlur((0, 3.0)),
+                    iaa.AverageBlur(k=(2, 7)),
+                    iaa.MedianBlur(k=(3, 11)),
+                ]),
+
+                # 随机锐化
+                iaa.Sharpen(alpha=(0, 1), lightness=(0.75, 1.25)),
+
+                # 高斯噪声
+                iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.03 * 255), per_channel=False),
+
+                # 反色
+                # iaa.Invert(0.03, per_channel=False),
+
+                # 改变亮度
+                iaa.Multiply((0.75, 1.25), per_channel=False),
+
+                # 改变对比度
+                iaa.LinearContrast((0.75, 1.25), per_channel=False),
+            ],
+            random_order=True,
+        )
+    ])
+    aug = seq
+
+    return seq
+
+
 class EastData(object):
 
     early_stopping_patience = 6
@@ -658,8 +700,10 @@ class EastData(object):
             return score_list, recs_xy_list, recs_classes_list
         return score_list, recs_xy_list
 
+    # TODO：裁切平移等增强，会更新四边形，需要相应更改像素
     @staticmethod
     def generator(
+        backdone,
         batch_size=cfg.batch_size,
         data_dir=cfg.data_dir,
         is_val=False,
@@ -680,11 +724,10 @@ class EastData(object):
         """
         img_h, img_w = max_train_img_size, max_train_img_size
         x = np.zeros((batch_size, img_h, img_w, num_channels), dtype=np.float32)
-        pixel_num_h = img_h // pixel_size   # fixme 以4*4个像素点为一格 预测值score
+        pixel_num_h = img_h // pixel_size
         pixel_num_w = img_w // pixel_size
-        # 增加一维class score
         y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 8), dtype=np.float32)
-        # y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
+
         if is_val:
             with open(os.path.join(data_dir, val_filename), 'r') as f_val:
                 f_list = f_val.readlines()
@@ -692,6 +735,7 @@ class EastData(object):
             with open(os.path.join(data_dir, train_filename), 'r') as f_train:
                 f_list = f_train.readlines()
         while True:
+            aug = _augmenter()
             for i in range(batch_size):
                 # random gen an image name
                 random_img = np.random.choice(f_list)
@@ -700,8 +744,15 @@ class EastData(object):
                 # load img and img anno
                 img_path = os.path.join(data_dir, train_img_dir, img_filename)
                 img = preprocessing.image.load_img(img_path)
-                img = preprocessing.image.img_to_array(img)
-                x[i] = preprocess_input(img, mode='tf')
+                img = preprocessing.image.img_to_array(img, dtype=np.uint8)
+                img_aug = aug.augment_image(img)
+                img = np.asarray(img_aug, dtype=np.float32)
+                if backdone == 'vgg':
+                    x[i] = preprocess_input(img, mode='tf')
+                elif backdone == 'pva':
+                    normalizer = Normalization()
+                    normalizer.adapt(img)
+                    x[i] = normalizer(img)
                 gt_file = os.path.join(data_dir, train_label_dir, img_filename[:-4] + '_gt.npy')
                 y[i] = np.load(gt_file)
             yield x, y
@@ -710,6 +761,7 @@ class EastData(object):
     def rec_loss(
         y_true,
         y_pred,
+        include_classes,
         epsilon=cfg.epsilon,
         lambda_class_score_loss=cfg.lambda_class_score_loss,
         lambda_inside_score_loss=cfg.lambda_inside_score_loss,
@@ -741,17 +793,18 @@ class EastData(object):
             abs_diff = tf.math.abs(diff)
             abs_diff_lt_1 = tf.math.less(abs_diff, 1)
             # （abs_didd - 0.5） 使用了L1距离计算方式 曼哈顿距离计算
+            # 小于1，0.5绝对差值平方；大于1，绝对差值-0.5，再乘边界像素权重
             pixel_wise_smooth_l1norm = (
                 reduce_sum(
-                    tf.where(abs_diff_lt_1, 0.5 * tf.math.square(abs_diff), abs_diff - 0.5),
+                    tf.where(abs_diff_lt_1, 0.5 * tf.math.square(abs_diff), abs_diff - 0.5),  #pylint: disable=E1121
                     axis=-1,
                 ) / n_q * weights
             )
 
             return pixel_wise_smooth_l1norm
         # TODO：这个内部非边界像素有什么作用呢
-        # inside 0：是否在内部
-        # class 1：是编号还是铭牌
+        # inside 0：是否在内部，0不在，1在,0多1少
+        # class 1：是编号还是铭牌，0编号，1铭牌，0多1少
         # vertex_code 2：是否在边界
         # vertex_code 3：在首部还是尾部
         # vertex_coord 4-7：首部或尾部两端点坐标差
@@ -760,11 +813,14 @@ class EastData(object):
         inside_logits = y_pred[:, :, :, 0]
         inside_labels = y_true[:, :, :, 0]
         inside_predicts = sigmoid(inside_logits)
+        # beta为多数负样本的比例
         inside_beta = 1 - reduce_mean(inside_labels)
         # log + epsilon for stable cal
         inside_score_loss = reduce_mean(
-            -1 * (inside_beta * inside_labels * tf.math.log(inside_predicts + epsilon) +
-            (1 - inside_beta) * (1 - inside_labels) * tf.math.log(1 - inside_predicts + epsilon))
+            -1 * (
+                inside_beta * inside_labels * tf.math.log(inside_predicts + epsilon) +
+                (1 - inside_beta) * (1 - inside_labels) * tf.math.log(1 - inside_predicts + epsilon)
+            )
         )
         inside_score_loss *= lambda_inside_score_loss
 
@@ -774,16 +830,17 @@ class EastData(object):
         class_predicts = sigmoid(class_logits)
         class_beta = 1 - reduce_mean(class_labels)
         class_score_loss = reduce_mean(
-            -1 * (class_beta * class_labels * tf.math.log(class_predicts + epsilon) +
-            (1 - class_beta) * (1 - class_labels) * tf.math.log(1 - class_predicts + epsilon))
+            -1 * (
+                class_beta * class_labels * tf.math.log(class_predicts + epsilon) +
+                (1 - class_beta) * (1 - class_labels) * tf.math.log(1 - class_predicts + epsilon)
+            )
         )
         class_score_loss *= lambda_class_score_loss
 
         # loss for side_vertex_code
-        # fixme class-balanced cross-entropy 处理正负样本不均衡问题
         vertex_logits = y_pred[:, :, :, 2:4]
         vertex_labels = y_true[:, :, :, 2:4]
-        # beta = 1 - 是否为边界/是否为内部
+        # vertex_beta为内部像素中非边界的比例
         vertex_beta = (
             1 - (reduce_mean(y_true[:, :, :, 2:3]) / (reduce_mean(inside_labels) + epsilon))
         )
@@ -792,9 +849,8 @@ class EastData(object):
         neg = -1 * (
             (1 - vertex_beta) * (1 - vertex_labels) * tf.math.log(1 - vertex_predicts + epsilon)
         )
-        # cast：向下取整
-        # positive_weights返回所有内部像素为1的tensor
-        positive_weights = cast(tf.math.equal(y_true[:, :, :, 0], 1), v1.dtypes.float32)
+        # 将所有内部像素转为tf.float32
+        positive_weights = cast(tf.math.equal(y_true[:, :, :, 0], 1), tf.float32)
         side_vertex_code_loss = (
             reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) /
             (reduce_sum(positive_weights) + epsilon)
@@ -802,12 +858,11 @@ class EastData(object):
         side_vertex_code_loss *= lambda_side_vertex_code_loss
 
         # loss for side_vertex_coord delta
-        # fixme 所有的边界像素预测值的加权平均来预测头或尾的短边两端的两个顶点
         # smoothed L1 loss
         g_hat = y_pred[:, :, :, 4:]
         g_true = y_true[:, :, :, 4:]
-        # veryex_weights返回所有边界像素为1的tensor
-        vertex_weights = cast(tf.math.equal(y_true[:, :, :, 2], 1), v1.dtypes.float32)
+        # 将所有边界像素转为tf.float32
+        vertex_weights = cast(tf.math.equal(y_true[:, :, :, 2], 1), tf.float32)
         pixel_wise_smooth_l1norm = smooth_l1_loss(g_hat, g_true, vertex_weights)
         side_vertex_coord_loss = (
             reduce_sum(pixel_wise_smooth_l1norm) /
@@ -815,20 +870,25 @@ class EastData(object):
         )
         side_vertex_coord_loss *= lambda_side_vertex_coord_loss
 
-        return inside_score_loss + class_score_loss + side_vertex_code_loss + side_vertex_coord_loss
+        loss = inside_score_loss + side_vertex_code_loss + side_vertex_coord_loss
+        if include_classes:
+            loss += class_score_loss
+
+        return loss
 
     @staticmethod
-    def callbacks(type_=None,
+    def callbacks(
+        fine_tune,
+        type_=None,
         early_stopping_patience=cfg.early_stopping_patience,
         early_stopping_verbose=cfg.early_stopping_verbose,
         check_point_filepath=cfg.check_point_filepath,
-        check_point_period=cfg.check_point_period,
-        check_point_verbose=cfg.check_point_verbose,
         reduce_lr_monitor=cfg.reduce_lr_monitor,
         reduce_lr_factor=cfg.reduce_lr_factor,
         reduce_lr_patience=cfg.reduce_lr_patience,
         reduce_lr_verbose=cfg.reduce_lr_verbose,
         reduce_lr_min_lr=cfg.reduce_lr_min_lr,
+        reduce_lr_min_fine_tune_lr=cfg.reduce_lr_min_fine_tune_lr,
         tensorboard_log_dir=cfg.tensorboard_log_dir,
         tensorboard_write_graph=cfg.tensorboard_write_graph,
         tensorboard_update_freq=cfg.tensorboard_update_freq,
@@ -842,25 +902,27 @@ class EastData(object):
         if type_ not in ['early_stopping', 'check_point', 'reduce_lr', 'tensorboard']:
             return
         if type_ == 'early_stopping':
-            callback = EarlyStopping(patience=early_stopping_patience, verbose=early_stopping_verbose)
+            callback = EarlyStopping(
+                patience=early_stopping_patience, verbose=early_stopping_verbose
+            )
         elif type_ == 'check_point':
-            # TODO：默认monitor
             callback = ModelCheckpoint(
                 filepath=check_point_filepath,
+                monitor='val_loss',
                 save_best_only=True,
                 save_weights_only=True,
-                period=check_point_period,
-                verbose=check_point_verbose,
             )
         elif type_ == 'reduce_lr':
+            lr = reduce_lr_min_fine_tune_lr if fine_tune else reduce_lr_min_lr
             callback = ReduceLROnPlateau(
                 monitor=reduce_lr_monitor,
                 factor=reduce_lr_factor,
                 patience=reduce_lr_patience,
                 verbose=reduce_lr_verbose,
-                min_lr=reduce_lr_min_lr,
+                min_lr=lr,
             )
         elif type_ == 'tensorboard':
+            log_dir = tensorboard_log_dir + datetime.now().strftime('%m%d-%H%M')
             callback = TensorBoard(
                 log_dir=tensorboard_log_dir,
                 write_graph=tensorboard_write_graph,

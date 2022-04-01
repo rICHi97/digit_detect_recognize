@@ -41,24 +41,54 @@ class EastNet(object):
     def __init__(
         self,
         backdone='vgg',
+        include_classes=False,
+        training=True,
+        fine_tune=False,
+        east_pretrained_weights_filepath=cfg.east_pretrained_weights_filepath
     ):
+        """
+        Parameters
+        ----------
+        include_class：是否将分类损失函数加到总损失函数中
+        fine_tune：True，解冻pva或vgg；False，冻结
+        Returns
+        ----------
+        """
         assert backdone in ('vgg', 'pva')
+        self.include_classes = include_classes
+        self.fine_tune = fine_tune
         self.input_img = Input(
             name='input_img', shape=(None, None, 3), dtype='float32',
         )
+        # TODO：输入数据增强
+        self.training = training
+        if self.training:
+            pass
         if backdone == 'vgg':
-            vgg16 = VGG16(
-                input_tensor=self.input_img, weights='imagenet', include_top=False
-            )
+            # 不调优，加载预训练，冻结basemodel，训练top层
+            # 调优，加载整体模型权重，所有层都可训练，训练整个模型
+            # vgg不含bn层
+            if not self.fine_tune:
+                vgg16 = VGG16(
+                    input_tensor=self.input_img, weights='imagenet', include_top=False
+                )
+                vgg16.trainable = False
+            else:
+                vgg16 = VGG16(
+                    input_tensor=self.input_img, weights=None, include_top=False
+                )
+                vgg16.trainable = True
             features = [vgg16.get_layer(f'block{i}_pool').output for i in (2, 3, 4, 5, )]
             self._f = {
-                1: features[3],
+                1: features[3], # block5_pool = f1
                 2: features[2],
                 3: features[1],
                 4: features[0],
             }
         elif backdone == 'pva':
             pvanet = network.PVAnet(self.input_img)
+            # TODO：pvanet加载大规模数据集首先训练作为预训练权重
+            pvanet.trainable = True
             features = pvanet.features
             self._f = {
                 1: features['f1'],
@@ -67,6 +97,22 @@ class EastNet(object):
                 4: features['f4']
             }
         self.network = self.create_network()
+        # 训练模式
+        if self.training:
+            if self.fine_tune:
+                self.network.load_weights(east_pretrained_weights_filepath)
+                self.network.trainable = True # 调优时才可解锁backdone
+                # 调优时冻结bn层，bn层设置不可训练连带设置以推理模式运行
+                for layer in self.network.layers:
+                    if isinstance(layer, (BatchNormalization, )):
+                        layer.trainable = False
+        # 推理模式
+        else:
+            # TODO：加载预测权重
+            self.network.trainable = False
+            for layer in self.network.layers:
+                if isinstance(layer, (BatchNormalization, )):
+                    layer.trainable = False
 
     def _h(self, i):
         assert i in (1, 2, 3, 4, )
@@ -102,10 +148,7 @@ class EastNet(object):
         ----------
         keras.Model
         """
-        # features_layers_range = [5, 4, 3, 2]
-        # before_output = self._g(4)
         before_output = self._g(4)
-        # Layers()
         # 增加class_score用于区分是端子铭牌还是端子编号
         inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
         classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)
@@ -135,6 +178,7 @@ class EastNet(object):
         self,
         summary=cfg.summary,
         lr=cfg.lr,
+        fine_tune_lr=cfg.fine_tune_lr,
         decay=cfg.decay,
         train_generator=EastData.generator,
         steps_per_epoch=cfg.steps_per_epoch,
@@ -153,14 +197,15 @@ class EastNet(object):
         """
         if summary:
             self.network.summary()
-        callbacks = [EastData.callbacks(type_) for type_ in callbacks]
+        callbacks = [EastData.callbacks(self.fine_tune, type_) for type_ in callbacks]
+        east_loss = lambda y_true, y_pred: EastData.rec_loss(y_true, y_pred, self.include_classes)
         # TODO：研究Adam优化器
+        lr = fine_tune_lr if self.fine_tune else lr
         self.network.compile(
-            loss=EastData.rec_loss,
+            loss=east_loss,
             optimizer=Adam(lr, decay),
         )
-        # TODO：新版的keras貌似已经在fit中集成了fit_generator功能，有待研究
-        self.network.fit_generator(
+        self.network.fit(
             generator=train_generator(),
             steps_per_epoch=steps_per_epoch,
             epochs=epoch_num,
@@ -182,6 +227,7 @@ class EastNet(object):
     # TODO：terminal_23识别有问题
     # TODO：num_img封装图片为batch检测，研究keras文档api调用说明
     # TODO：支持output txt
+    # TODO：预测时也要根据主干网不同预处理
     # 2/4修改，输出Rec实例形式
     def predict(
         self,

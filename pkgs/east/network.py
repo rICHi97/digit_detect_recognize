@@ -64,7 +64,7 @@ class PVAnet():
         ----------
         """
         conv = Conv2D(16, 7, 2, 'same')(inputs)
-        conv = BatchNormalization()(conv, training=False)
+        conv = BatchNormalization()(conv)
         conv_neg = tf.math.multiply(conv, -1.0) # 元素取负，通道数*2
         conv = Concatenate()([conv, conv_neg]) # ch = 32
         scale = Scale(32)
@@ -95,14 +95,14 @@ class PVAnet():
             ch1, ch2, ch3 = 48, 48, 128
         # block_prefix_1
         conv_1 = Conv2D(ch1, 1, first_conv_stride, padding='same')(inputs)
-        conv_1 = BatchNormalization()(conv_1, training=False)
+        conv_1 = BatchNormalization()(conv_1)
         scale = Scale(ch1)
         conv_1 = scale(conv_1)
         conv_1 = relu(conv_1)
         # conv_1.name = f'{block_prefix}_1'
         # block_prefix_2
         conv_2 = Conv2D(ch2, 3, 1, padding='same')(conv_1)
-        conv_2 = BatchNormalization()(conv_2, training=False)
+        conv_2 = BatchNormalization()(conv_2)
         conv_2_neg = tf.math.multiply(conv_2, -1.0)
         conv_2 = Concatenate()([conv_2, conv_2_neg])
         scale = Scale(2 * ch2)
@@ -111,7 +111,7 @@ class PVAnet():
         # conv_2.name = f'{block_prefix}_2'
         # block_prefix_3
         conv_3 = Conv2D(ch3, 1, 1, padding='same')(conv_2)
-        conv_3 = BatchNormalization()(conv_3, training=False)
+        conv_3 = BatchNormalization()(conv_3)
         scale = Scale(ch3)
         conv_3 = scale(conv_3)
         # conv_3.name = f'{block_prefix}_3'
@@ -134,7 +134,7 @@ class PVAnet():
         bn_scale_relu = lambda ch, conv: (
             relu(
                 Scale(ch)(
-                    BatchNormalization()(conv, training=False)
+                    BatchNormalization()(conv)
                 )
             )
         )
@@ -186,7 +186,7 @@ class PVAnet():
         # out层无需relu
         concat = Concatenate()(concat_layers)
         out_conv = Conv2D(out_conv_ch, 1, 1)(concat)
-        out_conv = BatchNormalization()(out_conv, training=False)
+        out_conv = BatchNormalization()(out_conv)
         out_conv = Scale(out_conv_ch)(out_conv)
         self.layers[f'{block_prefix}_out'] = out_conv
 
@@ -223,7 +223,7 @@ class PVAnet():
         _ = self.CReLU_blcok(pool1_1, 1, 'conv2_1') # blcok_conv_2_1
 
         pool1_1_project = Conv2D(64, 1, 1, padding='same')(pool1_1)
-        pool1_1_project = BatchNormalization()(pool1_1_project, training=False)
+        pool1_1_project = BatchNormalization()(pool1_1_project)
         scale = Scale(64)
         pool1_1_project = scale(pool1_1_project)
         conv2_1_3 = self.layers['conv2_1_3']
@@ -242,7 +242,7 @@ class PVAnet():
         # conv2_3连接conv3_1
         _ = self.CReLU_blcok(conv2_3, 2, 'conv3_1')
         conv2_3_project = Conv2D(128, 1, 2, padding='same')(conv2_3_3)
-        conv2_3_project = BatchNormalization()(conv2_3_project, training=False)
+        conv2_3_project = BatchNormalization()(conv2_3_project)
         scale = Scale(128)
         conv2_3_project = scale(conv2_3_project)
         conv3_1_3 = self.layers['conv3_1_3']
@@ -267,7 +267,7 @@ class PVAnet():
         _ = self.Inception_block(conv3_4, 'conv4_1')
         conv4_1_out = self.layers['conv4_1_out']
         conv3_4_project = Conv2D(256, 1, 2, padding='same')(conv3_4)
-        conv3_4_project = BatchNormalization()(conv3_4_project, training=False)
+        conv3_4_project = BatchNormalization()(conv3_4_project)
         scale = Scale(256)
         conv3_4_project = scale(conv3_4_project)
         conv4_1 = self.residual(conv3_4_project, conv4_1_out)
@@ -291,7 +291,7 @@ class PVAnet():
         _ = self.Inception_block(conv4_4, 'conv5_1')
         conv5_1_out = self.layers['conv5_1_out']
         conv4_4_project = Conv2D(384, 1, 2, padding='same')(conv4_4)
-        conv4_4_project = BatchNormalization()(conv4_4_project, training=False)
+        conv4_4_project = BatchNormalization()(conv4_4_project)
         scale = Scale(384)
         conv4_4_project = scale(conv4_4_project)
         conv5_1 = self.residual(conv4_4_project, conv5_1_out)
