@@ -1,0 +1,91 @@
+<html>
+    <head>
+        <title>
+            二次回路自动识别
+        </title>
+        <meta chareset="UTF-8">
+        <script language="javascript" src="./qwebchannel.js"></script>
+        <script language="javascript">
+            // TODO：登录，检查用户
+            // 检索待完成现场检验工单
+            // 调用摄像头，拍照，上传图片
+            // 服务端识别返回结果图片
+            function web2QtUsernamePwd(){
+                if ( window.sharing) {
+                    var username = document.getElementById("username").value;
+                    var pwd = document.getElementById("passwd").value;
+                    var username_pwd = username + " " + pwd;
+                    // 立即更新web端属性值，异步通知远程端有关更改的信息
+                    window.sharing.username_pwd = username_pwd;
+                }
+            }
+
+            function showResutl(){
+                // 获取html中填写的用户名和密码
+                var username = document.getElementById('username').value;
+                var pwd = document.getElementById('passwd').value;
+                if (username == ""){
+                    alert("用户名不能为空！");
+                    return false;
+                }
+                else if (pwd == ""){
+                    alert("密码不能为空！");
+                    return false;
+                    
+                }
+                // 将用户名和密码组合成pwd_name
+                else {
+                    var pwd_name = "用户名：" + username + "，密码：" + pwd;
+                    var obj = document.getElementById('result');
+                    // 将span id='r1'内的html设置为pwd_name
+                    // 会在html中显示一行文本
+                    obj.innerHTML = pwd_name;
+                }
+                // 不明白有什么用
+                // 就相当于调用了函数
+                var v = web2QtUsernamePwd();
+            }
+
+            function reset(){
+                document.getElementById("username").value='' ;
+                document.getElementById("passwd").value='' ;
+                var obj = document.getElementById('r1');
+                obj.innerHTML = "";
+            }
+
+            document.addEventListener(
+                "DOMContentLoaded",
+                function () {
+                    new QWebChannel(qt.webChannelTransport, function(channel){
+                            window.sharing = channel.objects.sharing;
+                    });
+                });
+
+        </script>
+        <style type="text/css">
+            html {
+                height: 100%;
+                width: 100%;
+            }
+            #input {
+                width: 400px;
+                margin: 0 10px 0 0;
+            }
+            #send {
+                width: 90px;
+                margin: 0;
+            }
+            #output {
+                width: 500px;
+                height: 300px;
+            }
+        </style>
+    </head>
+    <body>
+        <font color="red">*</font>用户名: <input type="text" name="username" id="username"><br>
+        <font color="red">*</font>密&nbsp;&nbsp;&nbsp;码: <input type="password" name="passwd" id="passwd"><br><br>
+        <button onclick="showResutl()">登录</button>
+        <button onclick="reset()">重置</button><br>
+        <span id="result"></span>
+    </body>
+</html>

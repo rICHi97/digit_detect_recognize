@@ -1,0 +1,6 @@
+*.ttf
+*.jpg
+*.png
+*.txt
+*.npy
+/resource/
