@@ -4,19 +4,25 @@ Created on 2021-12-29 01:34:54
 
 @author: Li Zhi
 """
-from pkgs.east import east_data, east_net
+from PIL import Image
+from tensorflow import keras
+
+from pkgs.east import east_data, east_net, network
+from pkgs.tool import visualization
 
 EastPreprocess = east_data.EastPreprocess
 EastNet = east_net.EastNet
+RecDraw = visualization.RecDraw
 
-# TODO：检查参数，检查文件，训练一个能分辨类别的模型用于后续测试验证
-# TODO：优化模型
-# TODO：检查np限制计算精度能否加快速度
-# TODO：先从mistgpu下载npy文件检查是否正确生成label
 # python east_preprocess_train.py; sleep 300; sh /mistgpu/shutdown.sh
 if __name__ == '__main__':
-    EastPreprocess.preprocess()
-    EastPreprocess.label()
-    east = EastNet()
+    # EastPreprocess.preprocess()
+    # EastPreprocess.label()
+    east = EastNet(backdone='inception_res', training=True, fine_tune=False)
+    # east = EastNet(backdone='pva', training=False, fine_tune=False)
     # east.train()
-    # east.predict()
+
+    # r_l = east.predict()
+    # img = Image.open('./resource/test_data/image/terminal_3_terminal_20.jpg')
+    # RecDraw.draw_recs(r_l[0], img)
+    # img.show()

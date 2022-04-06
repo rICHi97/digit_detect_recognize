@@ -11,22 +11,27 @@ import numpy as np
 from PIL import Image
 from tensorflow import keras
 from tensorflow.keras import applications, layers, optimizers, preprocessing, utils
+from tensorflow.keras.applications import vgg16, inception_resnet_v2
 
 from . import cfg, east_data, network
 from ..recdata import rec
 
 Input = keras.Input
 Model = keras.Model
-VGG16 = applications.vgg16.VGG16
+VGG16 = vgg16.VGG16
 BatchNormalization = layers.BatchNormalization
 Concatenate = layers.Concatenate
 Conv2D = layers.Conv2D
 Layer = layers.Layer
 MaxPooling2D = layers.MaxPooling2D
+Normalization = layers.Normalization
 UpSampling2D = layers.UpSampling2D
 Adam = optimizers.Adam
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
+PVANet = network.PVANet
+InceptionResNet = network.InceptionResNet
+Scale = network.Scale
 Rec = rec.Rec
 
 
@@ -40,11 +45,13 @@ class EastNet(object):
     """
     def __init__(
         self,
-        backdone='vgg',
-        include_classes=False,
-        training=True,
-        fine_tune=False,
-        east_pretrained_weights_filepath=cfg.east_pretrained_weights_filepath
+        backdone,
+        training,
+        fine_tune,
+        vgg_pretrained_weights_filepath=cfg.vgg_pretrained_weights_filepath,
+        pva_pretrained_weights_filepath=cfg.pva_pretrained_weights_filepath,
+        inception_res_pretrained_weights_filepath=cfg.inception_res_pretrained_weights_filepath,
+        east_weights_filepath=cfg.east_weights_filepath,
     ):
         """
         Parameters
@@ -54,30 +61,23 @@ class EastNet(object):
         Returns
         ----------
         """
-        assert backdone in ('vgg', 'pva')
-        self.include_classes = include_classes
+        assert backdone in ('vgg', 'pva', 'inception_res')
         self.fine_tune = fine_tune
         self.input_img = Input(
             name='input_img', shape=(None, None, 3), dtype='float32',
         )
         # TODO：输入数据增强
         self.training = training
-        if self.training:
-            pass
-        if backdone == 'vgg':
+        self.backdone = backdone
+        if self.backdone == 'vgg':
             # 不调优，加载预训练，冻结basemodel，训练top层
             # 调优，加载整体模型权重，所有层都可训练，训练整个模型
             # vgg不含bn层
-            if not self.fine_tune:
-                vgg16 = VGG16(
+            self.east_pretrained_weights_filepath = vgg_pretrained_weights_filepath
+            vgg16 = VGG16(
                     input_tensor=self.input_img, weights='imagenet', include_top=False
-                )
-                vgg16.trainable = False
-            else:
-                vgg16 = VGG16(
-                    input_tensor=self.input_img, weights=None, include_top=False
-                )
-                vgg16.trainable = True
+            )
+            vgg16.trainable = False # 默认不可训练，调优时可训练
             features = [vgg16.get_layer(f'block{i}_pool').output for i in (2, 3, 4, 5, )]
             self._f = {
                 1: features[3], # block5_pool = f1
@@ -85,10 +85,11 @@ class EastNet(object):
                 3: features[1],
                 4: features[0],
             }
-        elif backdone == 'pva':
-            pvanet = network.PVAnet(self.input_img)
+        elif self.backdone == 'pva':
+            self.east_pretrained_weights_filepath = pva_pretrained_weights_filepath
+            pvanet = PVANet(self.input_img)
             # TODO：pvanet加载大规模数据集首先训练作为预训练权重
-            pvanet.trainable = True
+            pvanet.network.trainable = True # 只训练一轮，默认可训练
             features = pvanet.features
             self._f = {
                 1: features['f1'],
@@ -96,11 +97,24 @@ class EastNet(object):
                 3: features['f3'],
                 4: features['f4']
             }
+        elif self.backdone == 'inception_res':
+            self.east_pretrained_weights_filepath = inception_res_pretrained_weights_filepath
+            inception_resnet = InceptionResNet(self.input_img)
+            inception_resnet.network.trainable = False
+            features = inception_resnet.features
+            self._f = {
+                1: features['f1'],
+                2: features['f2'],
+                3: features['f3'],
+                4: features['f4'],
+            }
         self.network = self.create_network()
         # 训练模式
         if self.training:
+            if self.backdone == 'pva':
+                self.network.trainable = True
             if self.fine_tune:
-                self.network.load_weights(east_pretrained_weights_filepath)
+                # self.network.load_weights(self.east_pretrained_weights_filepath)
                 self.network.trainable = True # 调优时才可解锁backdone
                 # 调优时冻结bn层，bn层设置不可训练连带设置以推理模式运行
                 for layer in self.network.layers:
@@ -108,7 +122,7 @@ class EastNet(object):
                         layer.trainable = False
         # 推理模式
         else:
-            # TODO：加载预测权重
+            self.network.load_weights(east_weights_filepath)
             self.network.trainable = False
             for layer in self.network.layers:
                 if isinstance(layer, (BatchNormalization, )):
@@ -180,12 +194,11 @@ class EastNet(object):
         lr=cfg.lr,
         fine_tune_lr=cfg.fine_tune_lr,
         decay=cfg.decay,
-        train_generator=EastData.generator,
+        generator=EastData.generator,
         steps_per_epoch=cfg.steps_per_epoch,
         epoch_num=cfg.epoch_num,
         verbose=cfg.train_verbose,
         callbacks=cfg.callbacks,
-        val_generator=EastData.generator,
         val_steps=cfg.val_steps,
         save_weights_filepath=cfg.save_weights_filepath,
     ):
@@ -198,33 +211,23 @@ class EastNet(object):
         if summary:
             self.network.summary()
         callbacks = [EastData.callbacks(self.fine_tune, type_) for type_ in callbacks]
-        east_loss = lambda y_true, y_pred: EastData.rec_loss(y_true, y_pred, self.include_classes)
         # TODO：研究Adam优化器
         lr = fine_tune_lr if self.fine_tune else lr
-        self.network.compile(
-            loss=east_loss,
-            optimizer=Adam(lr, decay),
-        )
+        self.network.compile(loss=EastData.rec_loss, optimizer=Adam(lr, decay))
+        train_generator = generator(backdone=self.backdone)
+        val_generator = generator(backdone=self.backdone, is_val=True)
         self.network.fit(
-            generator=train_generator(),
+            x=train_generator,
             steps_per_epoch=steps_per_epoch,
             epochs=epoch_num,
             verbose=verbose,
             callbacks=callbacks,
-            validation_data=val_generator(is_val=True),
+            validation_data=val_generator,
             validation_steps=val_steps,
         )
         self.network.save_weights(save_weights_filepath)
 
-    def load_weights(
-        self,
-        east_weights_filepath=cfg.east_weights_filepath,
-    ):
-        self.network.load_weights(east_weights_filepath)
-        self.is_load_weights = True
-
     # TODO：对于尺寸较大的图片，先裁切再predict
-    # TODO：terminal_23识别有问题
     # TODO：num_img封装图片为batch检测，研究keras文档api调用说明
     # TODO：支持output txt
     # TODO：预测时也要根据主干网不同预处理
@@ -255,33 +258,35 @@ class EastNet(object):
         imgs_recs_xy_list：所有图片的多个rec的四点坐标
         imgs_recs_classes_list：所有图片的rec类别信息
         """
-        if not self.is_load_weights:
-            self.load_weights()
-
+        self.network.load_weights(east_weights_filepath)
+        print(east_weights_filepath)
         if path.isdir(img_dir_or_path):
             img_files = os.listdir(img_dir_or_path)
             img_paths = [path.join(img_dir_or_path, img_file) for img_file in img_files]
         else:
             img_paths = [img_dir_or_path]
 
-        imgs_recs_list, recs_list = [], [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
+        imgs_recs_list = [] # imgs是配合keras的api调用，把多张img封装成batch，事实只有一张
 
         for img_path in img_paths:
-
+            recs_list = []
             img = preprocessing.image.load_img(img_path).convert('RGB')
             d_width, d_height = EastPreprocess.resize_img(img, max_predict_img_size)
             scale_ratio_w, scale_ratio_h = img.width / d_width, img.height / d_height
             img = img.resize((d_width, d_height), Image.BICUBIC)
             array_img = preprocessing.image.img_to_array(img)
-            array_img_all = np.zeros((num_img, d_height, d_width, 3))  # 封装多张图片，但在此只封装一张
-            array_img_all[0] = array_img
-            tf_img = applications.vgg16.preprocess_input(array_img, mode='tf')
+            if self.backdone in ('vgg', 'pva'):
+                tf_img = vgg16.preprocess_input(array_img)
+            elif self.backdone == 'inception_res':
+                tf_img = inception_resnet_v2.preprocess_input(array_img)
             x = np.zeros((num_img, d_height, d_width, 3))
             x[0] = tf_img
-            # TODO：明确输出y的shape
-            y_pred = self.network.predict(x)
-            y = y_pred[0]  # x_height / pixel_size * x_width / pixel_size * 8
+            # y_pred = self.network.predict(x)
+            y_pred = self.network(x, training=False)
+            y = y_pred[0]
+            y = y.numpy()
             y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
+            # 内部像素
             condition = np.greater_equal(y[:, :, 0], pixel_threshold)
             activation_pixels = np.asarray(condition).nonzero()
             # 12/4：nms中已经修改，以适应predict tensor shape

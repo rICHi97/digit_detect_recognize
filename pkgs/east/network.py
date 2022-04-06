@@ -6,34 +6,43 @@ Created on 2022-03-28 01:06:40
 """
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import activations, layers  #pylint: disable=E0401
+from tensorflow.keras import activations, backend, applications, layers  #pylint: disable=E0401
 
 Input = keras.Input
 Model = keras.Model
 relu = activations.relu
+InceptionResNetV2 = applications.inception_resnet_v2.InceptionResNetV2
 Add = layers.Add
 BatchNormalization = layers.BatchNormalization
 Concatenate = layers.Concatenate
 Conv2D = layers.Conv2D
 Layer = layers.Layer
 MaxPooling2D = layers.MaxPooling2D
+ZeroPadding2d = layers.ZeroPadding2D
 
 
 class Scale(Layer):
     """
     y = alpha * x + beta
     """
-    def __init__(self, ch, **kwargs):
-        super(Scale, self).__init__(**kwargs)
+    def __init__(self, ch, **kargs):
+        super(Scale, self).__init__(**kargs)
         self.ch = ch
-        alpha_init = tf.constant_initializer(1.0)
-        self.alpha = tf.Variable(
-            initial_value=alpha_init(shape=(1, self.ch), dtype=tf.float32),
+
+    def build(self, input_shape):
+        self.alpha = self.add_weight(
+            'alpha',
+            shape=(1, self.ch),
+            dtype=tf.float32,
             trainable=True,
+            initializer=tf.constant_initializer(1.0),
         )
-        beta_init = tf.zeros_initializer()
-        self.beta = tf.Variable(
-            initial_value=beta_init(shape=(1, self.ch), dtype=tf.float32)
+        self.beta = self.add_weight(
+            'beta',
+            shape=(1, self.ch),
+            dtype=tf.float32,
+            trainable=True,
+            initializer=tf.zeros_initializer(),
         )
 
     def call(self, inputs):
@@ -47,7 +56,7 @@ class Scale(Layer):
 
 # TODO：scale层中的变量是否加入loss
 # TODO：卷积模块由3个卷积连接而成，中间的取反，剩下的两个有必要scale吗？
-class PVAnet():
+class PVANet():
 
     def __init__(self, inputs):
         self.inputs = inputs
@@ -178,14 +187,14 @@ class PVAnet():
         concat_layers.append(eq5_conv3)
 
         if pool_conv_ch is not None:
-            pool = MaxPooling2D(pool_size=3, strides=2)(inputs)
+            pool = MaxPooling2D(pool_size=3, strides=2, padding='same')(inputs)
             pool_conv = Conv2D(pool_conv_ch, 1, 1, padding='same')(pool)
             pool_conv_ch = bn_scale_relu(pool_conv_ch, pool_conv)
             concat_layers.append(pool_conv_ch)
 
         # out层无需relu
         concat = Concatenate()(concat_layers)
-        out_conv = Conv2D(out_conv_ch, 1, 1)(concat)
+        out_conv = Conv2D(out_conv_ch, 1, 1, padding='same')(concat)
         out_conv = BatchNormalization()(out_conv)
         out_conv = Scale(out_conv_ch)(out_conv)
         self.layers[f'{block_prefix}_out'] = out_conv
@@ -219,7 +228,7 @@ class PVAnet():
         """
 
         conv1_1 = self.CReLU_blcok_start(self.inputs)
-        pool1_1 = MaxPooling2D(pool_size=3, strides=2)(conv1_1)
+        pool1_1 = MaxPooling2D(pool_size=3, strides=2, padding='same')(conv1_1)
         _ = self.CReLU_blcok(pool1_1, 1, 'conv2_1') # blcok_conv_2_1
 
         pool1_1_project = Conv2D(64, 1, 1, padding='same')(pool1_1)
@@ -319,3 +328,61 @@ class PVAnet():
         }
 
         return Model(inputs=self.inputs, outputs=conv5_4)
+
+
+# 提取keras中InceptionResNet
+class InceptionResNet():
+
+    def __init__(self, inputs=None):
+        # 重置状态，确保层名称一致
+        backend.clear_session()
+        if inputs is None:
+            inputs = Input(name='input_img', shape=(512, 512, 3), dtype='float32')
+        self.inputs = inputs
+        self.network = self.create_network()
+
+    def create_network(self):
+        self.network = InceptionResNetV2(
+            input_tensor=self.inputs, include_top=False, weights='imagenet'
+        )
+        self.features = {}
+        for layer in self.network.layers:
+            # 1/4输入
+            if layer.name == 'max_pooling2d':
+                # 形状不一致，补0，下同
+                self._f4 = layer
+                output = self._f4.output
+                output = ZeroPadding2d(padding=1)(output)
+                self.f4 = output
+                self.features['f4'] = self.f4
+
+            # 1/8输入
+            elif layer.name == 'max_pooling2d_1':
+                self._f3 = layer
+                output = self._f3.output
+                # padding = ((top_pad, bottom_pad), (left_pad, right_pad))
+                output = ZeroPadding2d(padding=((1, 2), (1, 2)))(output)
+                # conv 1*1转为128通道
+                output = Conv2D(128, 1, 1, padding='same')(output)
+                self.f3 = output
+                self.features['f3'] = self.f3
+
+            # 1/16输入
+            elif layer.name == 'mixed_6a':
+                self._f2 = layer
+                output = self._f2.output
+                output = ZeroPadding2d(padding=1)(output)
+                output = Conv2D(256, 1, 1, padding='same')(output)
+                self.f2 = output
+                self.features['f2'] = self.f2
+
+            # 1/32输入
+            elif layer.name == 'mixed_7a':
+                self._f1 = layer
+                output = self._f1.output
+                output = ZeroPadding2d(padding=1)(output)
+                output = Conv2D(384, 1, 1, padding='same')(output)
+                self.f1 = output
+                self.features['f1'] = self.f1
+
+        return self.network

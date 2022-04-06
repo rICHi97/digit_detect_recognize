@@ -131,7 +131,7 @@ class RecDraw(object):
         # TODO：考虑不设置font
         draw.text(center, text, fill=color, font=_get_font(font))
     
-    @staticmethod   
+    @staticmethod
     def draw_divide_group(divide_groups, recs_xy_list, img, width, color):
         """
         Parameters

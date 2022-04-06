@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 from shapely import geometry
 import tensorflow as tf
 from tensorflow.keras import applications, callbacks, layers, preprocessing
+from tensorflow.keras.applications import vgg16, inception_resnet_v2
 import tqdm
 
 from . import cfg
@@ -28,7 +29,6 @@ from ..recdata import recdata_processing
 
 datetime = datetime.datetime
 Sequential = iaa.Sequential
-preprocess_input = applications.vgg16.preprocess_input
 EarlyStopping = callbacks.EarlyStopping
 LearningRateScheduler = callbacks.LearningRateScheduler
 ModelCheckpoint = callbacks.ModelCheckpoint
@@ -604,8 +604,15 @@ class EastData(object):
         Returns:
         y：y = 1 / (1 + exp(-x))
         """
-        y = 1 / (1 + np.exp(-x))
-        return y
+        x_ravel = x.ravel()  # 将numpy数组展平
+        length = len(x_ravel)
+        y = []
+        for index in range(length):
+            if x_ravel[index] >= 0:
+                y.append(1.0 / (1 + np.exp(-x_ravel[index])))
+            else:
+                y.append(np.exp(x_ravel[index]) / (np.exp(x_ravel[index]) + 1))
+        return np.array(y).reshape(x.shape)
 
     # TODO：预测classes功能可能需要拆分
     @staticmethod
@@ -737,22 +744,17 @@ class EastData(object):
         while True:
             aug = _augmenter()
             for i in range(batch_size):
-                # random gen an image name
                 random_img = np.random.choice(f_list)
-                # strip移除头尾字符 默认是空格或换行符
                 img_filename = str(random_img).strip().split(',')[0]
-                # load img and img anno
                 img_path = os.path.join(data_dir, train_img_dir, img_filename)
                 img = preprocessing.image.load_img(img_path)
                 img = preprocessing.image.img_to_array(img, dtype=np.uint8)
                 img_aug = aug.augment_image(img)
                 img = np.asarray(img_aug, dtype=np.float32)
-                if backdone == 'vgg':
-                    x[i] = preprocess_input(img, mode='tf')
-                elif backdone == 'pva':
-                    normalizer = Normalization()
-                    normalizer.adapt(img)
-                    x[i] = normalizer(img)
+                if backdone in ('vgg', 'pva'):
+                    x[i] = vgg16.preprocess_input(img)
+                elif backdone == 'inception_res':
+                    x[i] = inception_resnet_v2.preprocess_input(img)
                 gt_file = os.path.join(data_dir, train_label_dir, img_filename[:-4] + '_gt.npy')
                 y[i] = np.load(gt_file)
             yield x, y
@@ -761,7 +763,6 @@ class EastData(object):
     def rec_loss(
         y_true,
         y_pred,
-        include_classes,
         epsilon=cfg.epsilon,
         lambda_class_score_loss=cfg.lambda_class_score_loss,
         lambda_inside_score_loss=cfg.lambda_inside_score_loss,
@@ -870,9 +871,9 @@ class EastData(object):
         )
         side_vertex_coord_loss *= lambda_side_vertex_coord_loss
 
-        loss = inside_score_loss + side_vertex_code_loss + side_vertex_coord_loss
-        if include_classes:
-            loss += class_score_loss
+        loss = (
+            inside_score_loss + class_score_loss + side_vertex_code_loss + side_vertex_coord_loss
+        )
 
         return loss
 
@@ -924,7 +925,7 @@ class EastData(object):
         elif type_ == 'tensorboard':
             log_dir = tensorboard_log_dir + datetime.now().strftime('%m%d-%H%M')
             callback = TensorBoard(
-                log_dir=tensorboard_log_dir,
+                log_dir=log_dir,
                 write_graph=tensorboard_write_graph,
                 update_freq=tensorboard_update_freq,
             )
