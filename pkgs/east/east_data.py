@@ -841,7 +841,7 @@ class EastData(object):
         # loss for side_vertex_code
         vertex_logits = y_pred[:, :, :, 2:4]
         vertex_labels = y_true[:, :, :, 2:4]
-        # vertex_beta为内部像素中非边界的比例
+        # vertex_beta为内部像素中非边界的比例，也是类似交叉熵
         vertex_beta = (
             1 - (reduce_mean(y_true[:, :, :, 2:3]) / (reduce_mean(inside_labels) + epsilon))
         )
@@ -850,10 +850,11 @@ class EastData(object):
         neg = -1 * (
             (1 - vertex_beta) * (1 - vertex_labels) * tf.math.log(1 - vertex_predicts + epsilon)
         )
-        # 将所有内部像素转为tf.float32
+        # 将所有内部像素转为tf.float32，计算内部像素占所有像素的比例，作为权重
         positive_weights = cast(tf.math.equal(y_true[:, :, :, 0], 1), tf.float32)
+        # 不太理解，乘了权重又除以权重
         side_vertex_code_loss = (
-            reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) /
+            reduce_sum(reduce_sum(pos + neg, axis=-1) * positive_weights) / # 只在内部像素上有pos + neg
             (reduce_sum(positive_weights) + epsilon)
         )
         side_vertex_code_loss *= lambda_side_vertex_code_loss

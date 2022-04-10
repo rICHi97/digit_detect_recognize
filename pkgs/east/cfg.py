@@ -21,8 +21,9 @@ label_img_dir = 'c_label_img'
 save_weights_filepath = f'./resource/east_model/{train_task_id}.h5' # 保存
 vgg_pretrained_weights_filepath = './resource/east_model/126-0.068.h5' # vgg预训练
 pva_pretrained_weights_filepath = './resource/east_model/087-0.070.h5' # pva预训练
-inception_res_pretrained_weights_filepath = None # ir预训练
-east_weights_filepath = './resource/east_model/101-0.070.h5' # 加载
+inception_res_pretrained_weights_filepath = './resource/east_model/105-0.069.h5' # ir预训练
+bd_east_pretrained_weights_filepath = './resource/east_model/011-0.111.h5/' # 双向预训练
+east_weights_filepath = './resource/east_model/115-0.073.h5' # 加载
 img_dir = './resource/test_data/image/'
 predict_img_dir = None
 output_txt = True
@@ -60,7 +61,7 @@ side_vertex_pixel_threshold = 0.8  # 原始为0.8，越大越严格，判断是�
 trunc_threshold = 0.2 # 原始为0.2，越小越严格，判断头尾像素
 
 # 控制三个loss的系数
-lambda_class_score_loss = 1.0
+lambda_class_score_loss = 2.0
 lambda_inside_score_loss = 2.0
 lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0

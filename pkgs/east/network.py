@@ -12,12 +12,14 @@ Input = keras.Input
 Model = keras.Model
 relu = activations.relu
 InceptionResNetV2 = applications.inception_resnet_v2.InceptionResNetV2
+VGG16 = applications.vgg16.VGG16
 Add = layers.Add
 BatchNormalization = layers.BatchNormalization
 Concatenate = layers.Concatenate
 Conv2D = layers.Conv2D
 Layer = layers.Layer
 MaxPooling2D = layers.MaxPooling2D
+UpSampling2D = layers.UpSampling2D
 ZeroPadding2d = layers.ZeroPadding2D
 
 
@@ -384,5 +386,64 @@ class InceptionResNet():
                 output = Conv2D(384, 1, 1, padding='same')(output)
                 self.f1 = output
                 self.features['f1'] = self.f1
+
+        return self.network
+
+
+# 基于east，主干网络vgg
+class BidirectionEAST():
+
+    def __init__(self, inputs=None):
+        backend.clear_session()
+        if inputs is None:
+            inputs = Input(name='input_img', shape=(512, 512, 3), dtype='float32')
+        self.inputs = inputs
+        self.network = self.create_network()
+
+    def create_network(self):
+        vgg16 = VGG16(
+            input_tensor=self.inputs, weights='imagenet', include_top=False
+        )
+        vgg16.trainable = False
+        f = {
+            1: vgg16.get_layer('block5_pool').output, # 1/32特征图
+            2: vgg16.get_layer('block4_pool').output, # 1/16特征图
+            3: vgg16.get_layer('block3_pool').output, # 1/8特征图
+            4: vgg16.get_layer('block2_pool').output, # 1/4特征图
+            5: vgg16.get_layer('block1_pool').output, # 1/2特征图
+        }
+
+        f_downward = MaxPooling2D((2, 2), strides=2)(f[5])
+        f_downward = Concatenate(axis=-1)([f[4], f_downward])
+        f_downward = BatchNormalization()(f_downward)
+        f_downward = Conv2D(128, 1, 1, padding='same', activation='relu')(f_downward)
+        f_downward = BatchNormalization()(f_downward)
+        f_downward = Conv2D(128, 3, 1, padding='same', activation='relu')(f_downward)
+        f_downward = MaxPooling2D((2, 2), strides=2)(f_downward)
+
+        f_upward = UpSampling2D(2)(f[1])
+        f_upward = Concatenate(axis=-1)([f[2], f_upward])
+        f_upward = BatchNormalization()(f_upward)
+        f_upward = Conv2D(128, 1, 1, padding='same', activation='relu')(f_upward)
+        f_upward = BatchNormalization()(f_upward)
+        f_upward = Conv2D(128, 3, 1, padding='same', activation='relu')(f_upward)
+        f_upward = UpSampling2D(2)(f_upward)
+
+        f_middle = Concatenate(axis=-1)([f_downward, f[3], f_upward])
+        f_middle = UpSampling2D(2, interpolation='bilinear')(f_middle) # 在1/4尺寸预测
+
+        g = BatchNormalization()(f_middle)
+        before_output = Conv2D(32, 3, 1, padding='same', activation='relu')(g)
+
+        inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
+        classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)
+        side_v_code = Conv2D(2, 1, padding='same', name='side_vertex_code')(before_output)
+        side_v_coord = Conv2D(4, 1, padding='same', name='side_vertex_coord')(before_output)
+        east_detect = (
+            Concatenate(axis=-1, name='east_detect')(
+                [inside_score, classes_score, side_v_code, side_v_coord]
+            )
+        )
+        self.network = Model(inputs=self.inputs, outputs=east_detect)
 
         return self.network

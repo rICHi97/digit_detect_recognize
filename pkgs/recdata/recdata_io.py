@@ -44,9 +44,9 @@ class RecdataIO(object):
                 # len = 8，不含类别信息
                 # len = 9，包含类别信息
                 if len(line) == 9:
-                    if line[-1] == 'number' or line[-1] == '编号':
+                    if line[-1] == 'terminal' or line[-1] == '编号' or line[-1] == 'number':
                         classes = 'terminal'
-                    else:
+                    elif line[-1] == 'plate':
                         classes = 'plate'
                     line = line[:-1]
                 xy_list = [float(xy) for xy in line]

@@ -6,6 +6,7 @@ Created on 2022-03-29 16:50:37
 """
 import os
 from os import path
+import time
 
 import numpy as np
 from PIL import Image
@@ -30,6 +31,7 @@ Adam = optimizers.Adam
 EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 PVANet = network.PVANet
+BidirectionEAST = network.BidirectionEAST
 InceptionResNet = network.InceptionResNet
 Scale = network.Scale
 Rec = rec.Rec
@@ -48,9 +50,11 @@ class EastNet(object):
         backdone,
         training,
         fine_tune,
+        bidirectional=False,
         vgg_pretrained_weights_filepath=cfg.vgg_pretrained_weights_filepath,
         pva_pretrained_weights_filepath=cfg.pva_pretrained_weights_filepath,
         inception_res_pretrained_weights_filepath=cfg.inception_res_pretrained_weights_filepath,
+        bd_east_pretrained_weights_filepath=cfg.bd_east_pretrained_weights_filepath, # 双向
         east_weights_filepath=cfg.east_weights_filepath,
     ):
         """
@@ -69,53 +73,62 @@ class EastNet(object):
         # TODO：输入数据增强
         self.training = training
         self.backdone = backdone
-        if self.backdone == 'vgg':
-            # 不调优，加载预训练，冻结basemodel，训练top层
-            # 调优，加载整体模型权重，所有层都可训练，训练整个模型
-            # vgg不含bn层
-            self.east_pretrained_weights_filepath = vgg_pretrained_weights_filepath
-            vgg16 = VGG16(
-                    input_tensor=self.input_img, weights='imagenet', include_top=False
-            )
-            vgg16.trainable = False # 默认不可训练，调优时可训练
-            features = [vgg16.get_layer(f'block{i}_pool').output for i in (2, 3, 4, 5, )]
-            self._f = {
-                1: features[3], # block5_pool = f1
-                2: features[2],
-                3: features[1],
-                4: features[0],
-            }
-        elif self.backdone == 'pva':
-            self.east_pretrained_weights_filepath = pva_pretrained_weights_filepath
-            pvanet = PVANet(self.input_img)
-            # TODO：pvanet加载大规模数据集首先训练作为预训练权重
-            pvanet.network.trainable = True # 只训练一轮，默认可训练
-            features = pvanet.features
-            self._f = {
-                1: features['f1'],
-                2: features['f2'],
-                3: features['f3'],
-                4: features['f4']
-            }
-        elif self.backdone == 'inception_res':
-            self.east_pretrained_weights_filepath = inception_res_pretrained_weights_filepath
-            inception_resnet = InceptionResNet(self.input_img)
-            inception_resnet.network.trainable = False
-            features = inception_resnet.features
-            self._f = {
-                1: features['f1'],
-                2: features['f2'],
-                3: features['f3'],
-                4: features['f4'],
-            }
-        self.network = self.create_network()
+        self.bidirectional = bidirectional
+        if not self.bidirectional:
+            if self.backdone == 'vgg':
+                # 不调优，加载预训练，冻结basemodel，训练top层
+                # 调优，加载整体模型权重，所有层都可训练，训练整个模型
+                # vgg不含bn层
+                self.east_pretrained_weights_filepath = vgg_pretrained_weights_filepath
+                vgg16 = VGG16(
+                        input_tensor=self.input_img, weights='imagenet', include_top=False
+                )
+                vgg16.trainable = False # 默认不可训练，调优时可训练
+                features = [vgg16.get_layer(f'block{i}_pool').output for i in (2, 3, 4, 5, )]
+                self._f = {
+                    1: features[3], # block5_pool = f1
+                    2: features[2],
+                    3: features[1],
+                    4: features[0],
+                }
+            elif self.backdone == 'pva':
+                self.east_pretrained_weights_filepath = pva_pretrained_weights_filepath
+                pvanet = PVANet(self.input_img)
+                # TODO：pvanet加载大规模数据集首先训练作为预训练权重
+                pvanet.network.trainable = True # 只训练一轮，默认可训练
+                features = pvanet.features
+                self._f = {
+                    1: features['f1'],
+                    2: features['f2'],
+                    3: features['f3'],
+                    4: features['f4']
+                }
+            elif self.backdone == 'inception_res':
+                self.east_pretrained_weights_filepath = inception_res_pretrained_weights_filepath
+                inception_resnet = InceptionResNet(self.input_img)
+                inception_resnet.network.trainable = False
+                features = inception_resnet.features
+                self._f = {
+                    1: features['f1'],
+                    2: features['f2'],
+                    3: features['f3'],
+                    4: features['f4'],
+                }
+            self.network = self.create_network()
+        # backdone也是vgg
+        else:
+            self.backdone = 'vgg'
+            self.east_pretrained_weights_filepath = bd_east_pretrained_weights_filepath
+            # 已经设置vgg不可训练
+            self.network = BidirectionEAST(self.input_img).network
         # 训练模式
         if self.training:
             if self.backdone == 'pva':
                 self.network.trainable = True
             if self.fine_tune:
-                # self.network.load_weights(self.east_pretrained_weights_filepath)
+                self.network.load_weights(self.east_pretrained_weights_filepath)
                 self.network.trainable = True # 调优时才可解锁backdone
+                print(f'load{self.east_pretrained_weights_filepath}')
                 # 调优时冻结bn层，bn层设置不可训练连带设置以推理模式运行
                 for layer in self.network.layers:
                     if isinstance(layer, (BatchNormalization, )):
@@ -234,7 +247,6 @@ class EastNet(object):
     # 2/4修改，输出Rec实例形式
     def predict(
         self,
-        east_weights_filepath=cfg.east_weights_filepath,
         img_dir_or_path=cfg.img_dir,
         output_txt=cfg.output_txt,
         output_txt_dir=cfg.output_txt_dir,
@@ -243,6 +255,7 @@ class EastNet(object):
         predict_img_dir=cfg.predict_img_dir,
         num_img=cfg.num_img,
         pixel_threshold=cfg.pixel_threshold,
+        return_time=False,
     ):
         """
         检测图片中端子及铭牌
@@ -258,8 +271,6 @@ class EastNet(object):
         imgs_recs_xy_list：所有图片的多个rec的四点坐标
         imgs_recs_classes_list：所有图片的rec类别信息
         """
-        self.network.load_weights(east_weights_filepath)
-        print(east_weights_filepath)
         if path.isdir(img_dir_or_path):
             img_files = os.listdir(img_dir_or_path)
             img_paths = [path.join(img_dir_or_path, img_file) for img_file in img_files]
@@ -282,7 +293,9 @@ class EastNet(object):
             x = np.zeros((num_img, d_height, d_width, 3))
             x[0] = tf_img
             # y_pred = self.network.predict(x)
+            s = time.process_time()
             y_pred = self.network(x, training=False)
+            e = time.process_time()
             y = y_pred[0]
             y = y.numpy()
             y[:, :, :4] = EastData.sigmoid(y[:, :, :4])
@@ -302,9 +315,15 @@ class EastNet(object):
                     xy_list[:, 0] *= scale_ratio_w
                     xy_list[:, 1] *= scale_ratio_h
                     xy_list = np.reshape(xy_list, (8,)).tolist()
-                    rec = Rec(xy_list=xy_list, classes=recs_classes_list[i])
+                    new_xy_list = []
+                    for _ in xy_list:
+                        new_xy_list.append(_ if _ > 0 else 0)
+                    rec = Rec(xy_list=new_xy_list, classes=recs_classes_list[i])
                     recs_list.append(rec)
 
             imgs_recs_list.append(recs_list)
 
-        return imgs_recs_list
+        if return_time:
+            return imgs_recs_list, e - s
+        else:
+            return imgs_recs_list

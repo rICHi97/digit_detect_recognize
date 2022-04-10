@@ -61,4 +61,3 @@ class UiTool():
         for file in new_files:
             new_file = path.join(new_code_dir, file)
             shutil.copy(new_file, old_code_dir)
-

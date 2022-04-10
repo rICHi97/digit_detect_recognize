@@ -23,14 +23,14 @@ RecdataIO = recdata_io.RecdataIO
 
 # TODO：读取一个文件夹中的txt文件，在对应的图片上绘制需要进一步封装
 
-def _get_font(font, size=50):
+def _get_font(font, size=25):
 
     if isinstance(font, (ImageFont.ImageFont, ImageFont.FreeTypeFont, ImageFont.TransposedFont)):
         return font
     elif isinstance(font, str):
         return ImageFont.truetype(font, size)
     elif font is None:
-        return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF', 32)
+        return ImageFont.truetype('../resource/font/HGBTS_CNKI.TTF', 16)
 
 # TODO：统一输入格式为PIL.Image
 # TODO：cfg参数化
@@ -93,6 +93,12 @@ class RecDraw(object):
             RecDraw.draw_rec(rec, img, width, color, distinguish_first_side, draw)
             if rec.text is not None:
                 RecDraw.draw_text(rec.text, rec.xy_list, img, draw=draw)
+            if rec.classes is not None:
+                if rec.classes == 'terminal':
+                    text = '端子'
+                elif rec.classes == 'plate':
+                    text = '铭牌'
+                RecDraw.draw_text(text, rec.xy_list, img, draw=draw)
 
     # TODO：绘制整个文件夹中img
     @staticmethod
@@ -186,7 +192,3 @@ class RecDraw(object):
             RecDraw.draw_text(classes, xy_list, img)
 
         img.save(path.join(output_dir, path.basename(img_path)))
-
-
-class GraphDraw:
-    pass
