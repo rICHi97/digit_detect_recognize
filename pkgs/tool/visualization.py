@@ -78,7 +78,7 @@ class RecDraw(object):
             draw.line(to_tuple_element(first_edge), color, width)
 
     @staticmethod
-    def draw_recs(recs_list, img, width=2, color='black', distinguish_first_side=False):
+    def draw_recs(recs_list, img, width=1, color='black', distinguish_first_side=False):
         """
         基于多个端子的四点坐标在图片中绘制端子
         Parameters
@@ -91,14 +91,14 @@ class RecDraw(object):
         draw = ImageDraw.Draw(img)
         for rec in recs_list:  #pylint: disable=E1133
             RecDraw.draw_rec(rec, img, width, color, distinguish_first_side, draw)
-            if rec.text is not None:
-                RecDraw.draw_text(rec.text, rec.xy_list, img, draw=draw)
-            if rec.classes is not None:
-                if rec.classes == 'terminal':
-                    text = '端子'
-                elif rec.classes == 'plate':
-                    text = '铭牌'
-                RecDraw.draw_text(text, rec.xy_list, img, draw=draw)
+            # if rec.text is not None:
+            #     RecDraw.draw_text(rec.text, rec.xy_list, img, draw=draw)
+            # if rec.classes is not None:
+            #     if rec.classes == 'terminal':
+            #         text = '端子'
+            #     elif rec.classes == 'plate':
+            #         text = '铭牌'
+            #     RecDraw.draw_text(text, rec.xy_list, img, draw=draw)
 
     # TODO：绘制整个文件夹中img
     @staticmethod

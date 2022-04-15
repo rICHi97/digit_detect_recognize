@@ -32,6 +32,8 @@ EastData = east_data.EastData
 EastPreprocess = east_data.EastPreprocess
 PVANet = network.PVANet
 BidirectionEAST = network.BidirectionEAST
+BidirectionEAST2 = network.BidirectionEAST2
+BidirectionEAST3 = network.BidirectionEAST3
 InceptionResNet = network.InceptionResNet
 Scale = network.Scale
 Rec = rec.Rec
@@ -50,7 +52,7 @@ class EastNet(object):
         backdone,
         training,
         fine_tune,
-        bidirectional=False,
+        bidirectional='V2', # None / 'V1' / 'V2' / 'V3'
         vgg_pretrained_weights_filepath=cfg.vgg_pretrained_weights_filepath,
         pva_pretrained_weights_filepath=cfg.pva_pretrained_weights_filepath,
         inception_res_pretrained_weights_filepath=cfg.inception_res_pretrained_weights_filepath,
@@ -74,7 +76,7 @@ class EastNet(object):
         self.training = training
         self.backdone = backdone
         self.bidirectional = bidirectional
-        if not self.bidirectional:
+        if self.bidirectional is None:
             if self.backdone == 'vgg':
                 # 不调优，加载预训练，冻结basemodel，训练top层
                 # 调优，加载整体模型权重，所有层都可训练，训练整个模型
@@ -120,7 +122,13 @@ class EastNet(object):
             self.backdone = 'vgg'
             self.east_pretrained_weights_filepath = bd_east_pretrained_weights_filepath
             # 已经设置vgg不可训练
-            self.network = BidirectionEAST(self.input_img).network
+            if self.bidirectional == 'V1':
+                self.network = BidirectionEAST(self.input_img).network
+            elif self.bidirectional == 'V2':
+                self.network = BidirectionEAST2(self.input_img).network
+            elif self.bidirectional == 'V3':
+                self.network = BidirectionEAST3(self.input_img).network
+
         # 训练模式
         if self.training:
             if self.backdone == 'pva':

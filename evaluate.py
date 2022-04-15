@@ -80,5 +80,21 @@ def evaluate(img_dir, label_dir, predict):
 
 if __name__ == '__main__':
     # 只能用第一次运行作标准，后续相同数据可能会缓存
-    east = EastNet(backdone='vgg', training=False, fine_tune=False, bidirectional=False)
+    east = EastNet(backdone='vgg', training=False, fine_tune=False, bidirectional='V2')
     p, r, f1, t, recognition_p = evaluate('./resource/test_data/image', './resource/test_data/label_txt', east.predict)
+
+# inside=2.0, class=2.0
+# 028-0.062, 0.9178 0.8662 0.8912 0.9806
+# 017-0.068, 0.9123 0.8607 0.8858 0.9826 *
+
+# 测试inside=1.0, class=2.0的模型
+# 071-0.062, 0.9080, 0.8437, 0.8747, 0.9761
+
+# inside=2.0，class=2.0
+# 双向EAST_V3
+# 079-0.071, 0.9276, 0.9036, 0.9154, 0.9813
+# 089-0.066, 0.9305,0.9018,0.9159,0.9812 *
+
+# 双向EAST_V2
+# 101-0.072, 0.9347, 0.8984, 0.9162, 0.9867
+# 044-0.065, 0.9352,0.8904,0.9123,0.9885 * 跨层连接比逐层连接厉害

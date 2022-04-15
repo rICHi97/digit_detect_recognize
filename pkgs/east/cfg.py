@@ -22,18 +22,18 @@ save_weights_filepath = f'./resource/east_model/{train_task_id}.h5' # 保存
 vgg_pretrained_weights_filepath = './resource/east_model/126-0.068.h5' # vgg预训练
 pva_pretrained_weights_filepath = './resource/east_model/087-0.070.h5' # pva预训练
 inception_res_pretrained_weights_filepath = './resource/east_model/105-0.069.h5' # ir预训练
-bd_east_pretrained_weights_filepath = './resource/east_model/011-0.111.h5/' # 双向预训练
-east_weights_filepath = './resource/east_model/115-0.073.h5' # 加载
+bd_east_pretrained_weights_filepath = './resource/east_model/011-0.111.h5/' # 双向预训练，自行区分V1、V2、V3
+east_weights_filepath = './resource/east_model/044-0.065.h5' # 加载
 img_dir = './resource/test_data/image/'
 predict_img_dir = None
 output_txt = True
 output_txt_dir = './resource/test_data/image_txt'
 
-val_ratio = 0.1
+val_ratio = 0.2
 val_filename = f'val_{train_task_id}.txt'
 train_filename = f'train_{train_task_id}.txt'
-total_img = 5828
-batch_size = 24  # batch_size应该随img_size而调整
+total_img = 10
+batch_size = 2  # batch_size应该随img_size而调整
 steps_per_epoch = total_img * (1 - val_ratio) // batch_size
 val_steps = total_img * val_ratio // batch_size
 summary = True
@@ -62,7 +62,7 @@ trunc_threshold = 0.2 # 原始为0.2，越小越严格，判断头尾像素
 
 # 控制三个loss的系数
 lambda_class_score_loss = 2.0
-lambda_inside_score_loss = 2.0
+lambda_inside_score_loss = 1.0
 lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0
 

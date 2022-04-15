@@ -56,6 +56,60 @@ class Scale(Layer):
         return config
 
 
+class WeightAdd(Layer):
+    """
+    y = alpha_1 * predict_1 + alpha_2 * predict_2 + alpha_3 * predict_3 + aplha_0 * predict_0
+    """
+    def __init__(self, ch, **kargs):
+        super(WeightAdd, self).__init__(**kargs)
+        self.ch = ch
+
+    def build(self, input_shape):
+        self.alpha_0 = self.add_weight(
+            'alpha_0',
+            shape=(1, self.ch),
+            dtype=tf.float32,
+            trainable=True,
+            initializer=tf.constant_initializer(0.25),
+        )
+        self.alpha_1 = self.add_weight(
+            'alpha_1',
+            shape=(1, self.ch),
+            dtype=tf.float32,
+            trainable=True,
+            initializer=tf.constant_initializer(0.25),
+        )
+        self.alpha_2 = self.add_weight(
+            'alpha_2',
+            shape=(1, self.ch),
+            dtype=tf.float32,
+            trainable=True,
+            initializer=tf.constant_initializer(0.25),
+        )
+        self.alpha_3 = self.add_weight(
+            'alpha_3',
+            shape=(1, self.ch),
+            dtype=tf.float32,
+            trainable=True,
+            initializer=tf.constant_initializer(0.25),
+        )
+
+    def call(self, inputs):
+        alpha = self.alpha_0 + self.alpha_1 + self.alpha_2 + self.alpha_3
+        return (
+            self.alpha_0 / alpha * inputs[0] +
+            self.alpha_1 / alpha * inputs[1] +
+            self.alpha_2 / alpha * inputs[2] +
+            self.alpha_3 / alpha * inputs[3]
+        )
+
+    def get_config(self):
+        config = super(WeightAdd, self).get_config()
+        config.update({'ch': self.ch})
+        return config
+
+
+
 # TODO：scale层中的变量是否加入loss
 # TODO：卷积模块由3个卷积连接而成，中间的取反，剩下的两个有必要scale吗？
 class PVANet():
@@ -390,7 +444,7 @@ class InceptionResNet():
         return self.network
 
 
-# 基于east，主干网络vgg
+# 基于east，主干网络vgg，逐层上下特征融合
 class BidirectionEAST():
 
     def __init__(self, inputs=None):
@@ -444,6 +498,180 @@ class BidirectionEAST():
                 [inside_score, classes_score, side_v_code, side_v_coord]
             )
         )
+        self.network = Model(inputs=self.inputs, outputs=east_detect)
+
+        return self.network
+
+
+# 基于east，主干网络vgg，跨层上下特征融合
+class BidirectionEAST2():
+
+    def __init__(self, inputs=None):
+        backend.clear_session()
+        if inputs is None:
+            inputs = Input(name='input_img', shape=(512, 512, 3), dtype='float32')
+        self.inputs = inputs
+        self.network = self.create_network()
+
+    def create_network(self):
+        vgg16 = VGG16(
+            input_tensor=self.inputs, weights='imagenet', include_top=False
+        )
+        vgg16.trainable = False
+        # 连接到1/8特征图
+        f = {
+            1: vgg16.get_layer('block5_pool').output, # 1/32特征图
+            2: vgg16.get_layer('block4_pool').output, # 1/16特征图
+            3: vgg16.get_layer('block3_pool').output, # 1/8特征图
+            4: vgg16.get_layer('block2_pool').output, # 1/4特征图
+            5: vgg16.get_layer('block1_pool').output, # 1/2特征图
+        }
+
+        f_downward_1 = BatchNormalization()(f[5])
+        f_downward_1 = Conv2D(64, 1, 1, padding='same', activation='relu')(f_downward_1)
+        f_downward_1 = MaxPooling2D((4, 4), strides=4)(f_downward_1)
+
+        f_downward_2 = BatchNormalization()(f[4])
+        f_downward_2 = Conv2D(128, 1, 1, padding='same', activation='relu')(f_downward_2)
+        f_downward_2 = MaxPooling2D((2, 2), strides=2)(f_downward_2)
+
+        f_upward_1 = BatchNormalization()(f[1])
+        f_upward_1 = Conv2D(512, 1, 1, padding='same', activation='relu')(f_upward_1)
+        f_upward_1 = UpSampling2D((4, 4))(f_upward_1)
+
+        f_upward_2 = BatchNormalization()(f[2])
+        f_upward_2 = Conv2D(512, 1, 1, padding='same', activation='relu')(f_upward_2)
+        f_upward_2 = UpSampling2D((2, 2))(f_upward_2)
+
+        # 64 + 128 + 256 + 512 + 512
+        f_middle = Concatenate(axis=-1)([f_downward_1, f_downward_2, f[3], f_upward_1, f_upward_2])
+        f_middle = BatchNormalization()(f_middle)
+        f_middle = Conv2D(128, 1, 1, padding='same', activation='relu')(f_middle)
+        f_middle = BatchNormalization()(f_middle)
+        f_middle = Conv2D(128, 3, 1, padding='same', activation='relu')(f_middle)
+        f_middle = UpSampling2D((2, 2), interpolation='bilinear')(f_middle) # 在1/4尺寸预测
+
+        g = BatchNormalization()(f_middle)
+        before_output = Conv2D(32, 3, 1, padding='same', activation='relu')(g)
+
+        inside_score = Conv2D(1, 1, padding='same', name='inside_score')(before_output)
+        classes_score = Conv2D(1, 1, padding='same', name='class_score')(before_output)
+        side_v_code = Conv2D(2, 1, padding='same', name='side_vertex_code')(before_output)
+        side_v_coord = Conv2D(4, 1, padding='same', name='side_vertex_coord')(before_output)
+        east_detect = (
+            Concatenate(axis=-1, name='east_detect')(
+                [inside_score, classes_score, side_v_code, side_v_coord]
+            )
+        )
+        self.network = Model(inputs=self.inputs, outputs=east_detect)
+
+        return self.network
+
+
+# 基于east，主干网络vgg，逐层特征预测，预测结果融合
+class BidirectionEAST3():
+
+    def __init__(self, inputs=None):
+        backend.clear_session()
+        if inputs is None:
+            inputs = Input(name='input_img', shape=(512, 512, 3), dtype='float32')
+        self.inputs = inputs
+        self.network = self.create_network()
+
+    def create_network(self):
+        vgg16 = VGG16(
+            input_tensor=self.inputs, weights='imagenet', include_top=False
+        )
+        vgg16.trainable = False
+        # 连接到1/8特征图
+        f = {
+            1: vgg16.get_layer('block5_pool').output, # 1/32特征图
+            2: vgg16.get_layer('block4_pool').output, # 1/16特征图
+            3: vgg16.get_layer('block3_pool').output, # 1/8特征图
+            4: vgg16.get_layer('block2_pool').output, # 1/4特征图
+        }
+
+        h1 = f[1]
+        g1 = UpSampling2D((2, 2))(h1)
+        h2 = Concatenate(axis=-1)([g1, f[2]])
+        h2 = BatchNormalization()(h2)
+        h2 = Conv2D(128, 1, 1, padding='same', activation='relu')(h2)
+        h2 = BatchNormalization()(h2)
+        h2 = Conv2D(128, 3, 1, padding='same', activation='relu')(h2)
+
+        g2 = UpSampling2D((2, 2))(h2)
+        h3 = Concatenate(axis=-1)([g2, f[3]])
+        h3 = BatchNormalization()(h3)
+        h3 = Conv2D(64, 1, 1, padding='same', activation='relu')(h3)
+        h3 = BatchNormalization()(h3)
+        h3 = Conv2D(64, 3, 1, padding='same', activation='relu')(h3)
+
+        g3 = UpSampling2D((2, 2))(h3)
+        h4 = Concatenate(axis=-1)([g3, f[4]])
+        h4 = BatchNormalization()(h4)
+        h4 = Conv2D(64, 1, 1, padding='same', activation='relu')(h4)
+        h4 = BatchNormalization()(h4)
+        h4 = Conv2D(64, 3, 1, padding='same', activation='relu')(h4)
+
+        # 1是1/8标准尺寸
+        h1 = UpSampling2D((8, 8))(h1)
+        before_output1 = BatchNormalization()(h1)
+        before_output1 = Conv2D(32, 3, 1, padding='same', activation='relu')(before_output1)
+        inside_score1 = Conv2D(1, 1, padding='same', name='inside_score1')(before_output1)
+        classes_score1 = Conv2D(1, 1, padding='same', name='class_score1')(before_output1)
+        side_v_code1 = Conv2D(2, 1, padding='same', name='side_vertex_code1')(before_output1)
+        side_v_coord1 = Conv2D(4, 1, padding='same', name='side_vertex_coord1')(before_output1)
+        east_detect1 = (
+            Concatenate(axis=-1, name='east_detect1')(
+                [inside_score1, classes_score1, side_v_code1, side_v_coord1]
+            )
+        )
+
+        # 2是1/4标准尺寸
+        h2 = UpSampling2D((4, 4))(h2)
+        before_output2 = BatchNormalization()(h2)
+        before_output2 = Conv2D(32, 3, 1, padding='same', activation='relu')(before_output2)
+        inside_score2 = Conv2D(1, 1, padding='same', name='inside_score2')(before_output2)
+        classes_score2 = Conv2D(1, 1, padding='same', name='class_score2')(before_output2)
+        side_v_code2 = Conv2D(2, 1, padding='same', name='side_vertex_code2')(before_output2)
+        side_v_coord2 = Conv2D(4, 1, padding='same', name='side_vertex_coord2')(before_output2)
+        east_detect2 = (
+            Concatenate(axis=-1, name='east_detect2')(
+                [inside_score2, classes_score2, side_v_code2, side_v_coord2]
+            )
+        )
+
+        # 3是1/2标准尺寸
+        h3 = UpSampling2D((2, 2))(h3)
+        before_output3 = BatchNormalization()(h3)
+        before_output3 = Conv2D(32, 3, 1, padding='same', activation='relu')(before_output3)
+        inside_score3 = Conv2D(1, 1, padding='same', name='inside_score3')(before_output3)
+        classes_score3 = Conv2D(1, 1, padding='same', name='class_score3')(before_output3)
+        side_v_code3 = Conv2D(2, 1, padding='same', name='side_vertex_code3')(before_output3)
+        side_v_coord3 = Conv2D(4, 1, padding='same', name='side_vertex_coord3')(before_output3)
+        east_detect3 = (
+            Concatenate(axis=-1, name='east_detect3')(
+                [inside_score3, classes_score3, side_v_code3, side_v_coord3]
+            )
+        )
+
+        # 4是标准尺寸
+        before_output4 = BatchNormalization()(h4)
+        before_output4 = Conv2D(32, 3, 1, padding='same', activation='relu')(before_output4)
+        inside_score4 = Conv2D(1, 1, padding='same', name='inside_score4')(before_output4)
+        classes_score4 = Conv2D(1, 1, padding='same', name='class_score4')(before_output4)
+        side_v_code4 = Conv2D(2, 1, padding='same', name='side_vertex_code4')(before_output4)
+        side_v_coord4 = Conv2D(4, 1, padding='same', name='side_vertex_coord4')(before_output4)
+        east_detect4 = (
+            Concatenate(axis=-1, name='east_detect4')(
+                [inside_score4, classes_score4, side_v_code4, side_v_coord4]
+            )
+        )
+
+        east_detect = WeightAdd(8, name='east_detect')(
+            [east_detect1, east_detect2, east_detect3, east_detect4]
+        )
+
         self.network = Model(inputs=self.inputs, outputs=east_detect)
 
         return self.network

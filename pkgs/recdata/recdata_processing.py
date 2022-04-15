@@ -435,6 +435,7 @@ class RecdataProcess(object):
         others.remove(third_v)
         b_mid = xy_list[first_v, 1] - k[k_mid] * xy_list[first_v, 0]
         second_v, fourth_v = 0, 0
+        # 截距判断
         for index, i in zip(others, range(len(others))):
             delta_y = xy_list[index, 1] - (k[k_mid] * xy_list[index, 0] + b_mid)
             if delta_y > 0:
@@ -521,7 +522,6 @@ class RecdataProcess(object):
 
         return recs_list
 
-    # TODO：通过plate分组，似乎pca分组没有必要了。检查发现还是有必要的，有些同一个安装单位中的端子分布不一致
     @staticmethod
     def plate_group(recs_list):
         """
@@ -538,15 +538,15 @@ class RecdataProcess(object):
         recs_list = RecdataProcess.reorder_recs(recs_list)
         for rec in recs_list:
             assert rec.classes in ('terminal', 'plate', 'unsure'), '端子类别错误'
-            # 遇到plate新建一组
-            if rec.classes == 'plate': # 不确定的rec不能新开组
+            # 遇到plate新建一组，不确定的rec不能新开组
+            if rec.classes == 'plate':
                 group_list.append(tmp_list.copy())
                 tmp_list.clear()
             # 未遇到plate
             tmp_list.append(rec)
         # 此时所有rec都不是铭牌
         group_list.append(tmp_list)
-        # 当plate是第一个时，group_list append了空tmp_list
+        # 当plate是第一个时，group_list append了空tmp_list，去除
         group_list = [group for group in group_list if bool(group)]
 
         return group_list

@@ -14,11 +14,12 @@ sklearn中各方法输入数据格式为array，形状为n_samples * n_features
 import math
 
 import numpy as np
-from sklearn import linear_model, decomposition, preprocessing
+from sklearn import linear_model, neighbors, decomposition, preprocessing
 
 from . import cfg, rec, recdata_processing
 
 LinearRegression = linear_model.LinearRegression
+LocalOutlierFactor = neighbors.LocalOutlierFactor
 PCA_ = decomposition.PCA
 MaxAbsScaler = preprocessing.MaxAbsScaler
 MinMaxScaler = preprocessing.MinMaxScaler
@@ -149,7 +150,6 @@ class PCA(object):
     """
     # TODO：一定需要归一化？
     # TODO：不归一化时，二阶和一阶差值的数量级会差距较多
-    # TODO：考虑加自动归一化，除以最大xy值
     @staticmethod
     def get_pca_values(
         recs_xy_list,
@@ -236,6 +236,7 @@ class PCA(object):
 
         return delta_values
 
+    @staticmethod
     def divide_recs(pca_values):
         """
         通过PCA值对端子分组，端子分布分为三类：单列、双列、单列多线
@@ -252,7 +253,7 @@ class PCA(object):
         --'index'：list，元素为每组的index
         --'value'：list，每组的pca_value
         """
-        def get_delta_ratio(pca_values): # delta_ratio = pca_delta2 / pca_delta1
+        def get_delta_value(pca_values): # delta_ratio = pca_delta2 / pca_delta1
 
             # TODO：在双列端子上验证效果
 
@@ -265,6 +266,7 @@ class PCA(object):
                 _get_avg(delta_one_values),
                 _get_avg(delta_two_values),
             )
+            avg_abs_delta_one_value = _get_avg([abs(_) for _ in delta_one_values])
 
             # TODO：不归一化时，一阶差值可能很大，平均值也很大
             # 例，一阶差值[412, -429, 412, -427]，求平均后后虽然相对原始数据很小
@@ -281,9 +283,7 @@ class PCA(object):
             #     _get_avg(delta_two_values) / _get_avg(abs_delta_two_values),
             # )
 
-            delta_ratio = abs(avg_delta_two_value) / abs(avg_delta_one_value + EPSILON)
-
-            return delta_ratio
+            return avg_delta_one_value, avg_abs_delta_one_value, avg_delta_two_value
 
         def divide_one_col(pca_values):
 
@@ -331,22 +331,22 @@ class PCA(object):
 
             return divide_groups
 
-        # TODO：命名还需考虑
-        # TODO：枚举
-        distribution_types = ('one_col', 'two_cols', 'one_col_n_lines')
         # 端子如果单列分布，avg_delta_two_value大致为avg_delta_one_value的两倍
         # 考虑一定的裕度
-        delta_ratio = get_delta_ratio(pca_values)
-        one_col_range = [1.8, 2.5]
-        is_num_in_range = lambda num, range_: bool(range_[0] < num < range_[1])
+        avg_delta_one_value, avg_abs_delta_one_value, avg_delta_two_value = (
+            get_delta_value(pca_values)
+        )
+        # one_col_range = [1.8, 2.5]
+        # is_num_in_range = lambda num, range_: bool(range_[0] < num < range_[1])
 
-        # 此时为单列分布
-        if is_num_in_range(delta_ratio, one_col_range):
-            divide_groups = divide_one_col(pca_values)
         # 此时为双列分布
-        else:
-            distribution_type = distribution_types[1] # 'two_cols'
+        if abs(avg_delta_one_value / (avg_abs_delta_one_value + EPSILON)) < 0.8:
             divide_groups = divide_two_cols(pca_values)
+        # 此时为单列分布
+        elif 1.8 < avg_delta_two_value / avg_delta_one_value < 2.2:
+            divide_groups = divide_one_col(pca_values)
+        else:
+            print('分组失败')
 
         return divide_groups
 
@@ -378,8 +378,11 @@ class Regression(object):
         new_center_x_data, new_center_y_data = [], []
         for i in range(len(center_x_data)):
             ratio = (center_y_data[i] - np.min(center_y_data)) / delta_y
-            new_center_x = k * ratio * delta_x + np.min(center_x_data)
-            new_center_y = k * ratio * delta_y + np.min(center_y_data)
+            if k == 1:
+                new_center_x = k * ratio * delta_x + np.min(center_x_data)
+            else:
+                new_center_x = k * ratio * delta_x + np.max(center_x_data)
+            new_center_y = ratio * delta_y + np.min(center_y_data)
             new_center_x_data.append(new_center_x)
             new_center_y_data.append(new_center_y)
 
@@ -416,6 +419,7 @@ class Regression(object):
         区别于rec_shape_data，仅包括回归自变量以及回归因变量
         ----------
         """
+        # 准备用于回归的数据
         def get_regression_data(regression_vars):
 
             vars_ = {
@@ -445,13 +449,24 @@ class Regression(object):
             if 'center' in regression_vars:
                 if avg:
                     center_index = regression_vars.index('center')
+                # 不取平均，每个regression_var在data中对应2维
                 else:
                     center_index = 2 * regression_vars.index('center')
+                # 取原始xy数据
                 center_xy_data = regression_data[:, center_index:center_index + 2]
                 new_center_xy_data = Regression._correct_rec_center(center_xy_data)
                 regression_data[:, center_index:center_index + 2] = new_center_xy_data
 
             return regression_data, original_regression_data
+
+        # TODO：暂时不考虑取平均
+        def extract_array_to_dict(dest_dict, data, vars_):
+            for var in vars_:
+                # 每个变量有两维，对应对边
+                start, end = 2 * vars_.index(var), 2 * vars_.index(var) + 2
+                # 认定array格式为n_samples * n_features
+                var_data = data[:, start:end]
+                dest_dict[var] = var_data.tolist()
 
         independent_vars, dependent_vars = (
             regression_vars['independent'], regression_vars['dependent']
@@ -459,25 +474,35 @@ class Regression(object):
         independent_data, dependent_data = (
             get_regression_data(independent_vars), get_regression_data(dependent_vars)
         )
-        reg = LinearRegression().fit(independent_data[0], dependent_data[0])
+        # st_independent_data = StandardScaler().fit_transform(independent_data[0])
+        st_independent_data = StandardScaler().fit_transform(independent_data[1])
+        # n_samples * n_features
+        n_samples, n_features = dependent_data[0].shape
+        regression_dependent_data = np.zeros((n_samples, n_features))
+        for i in range(n_features):
+            x = st_independent_data # 标准化
+            y = dependent_data[0][:, i].reshape(-1, 1)
+            # 离群点检测
+            clf = LocalOutlierFactor(n_neighbors=max(1, int(0.3 * n_samples)))
+            factors = (clf.fit_predict(StandardScaler().fit_transform(y)) == 1)
+            new_x, new_y = x[factors], y[factors]
+            # new_x, new_y = independent_data[0][factors], dependent_data[0][:, i].reshape(-1, 1)[factors]
+            reg = LinearRegression().fit(new_x, new_y)
+            regression_dependent_data[:, i] = reg.predict(x).reshape((n_samples,))
+            # regression_dependent_data[:, i] = reg.predict(independent_data[0]).reshape((n_samples,))
+        # reg = LinearRegression().fit(st_independent_data, dependent_data[0])
 
-        def extract_array_to_dict(dest_dict, train_data, vars_):
-            for var in vars_:
-                # 每个变量有两维，对应对边
-                start, end = 2 * vars_.index(var), 2 * vars_.index(var) + 2
-                # 认定array格式为n_samples * n_features
-                var_data = train_data[:, start:end]
-                dest_dict[var] = var_data.tolist()
-
-        regression_dependent_data = reg.predict(independent_data[0])
+        # regression_dependent_data = reg.predict(independent_data[0])
+        # regression_dependent_data = reg.predict(st_independent_data)
         regression_rec_shape_data = {}
+        # 把原始xy数据提取到字典中
         extract_array_to_dict(
-            regression_rec_shape_data, independent_data[0], independent_vars,
+            regression_rec_shape_data, independent_data[1], independent_vars,
         )
         extract_array_to_dict(
             regression_rec_shape_data, regression_dependent_data, dependent_vars,
         )
-
+        # 字典，key='center'/'length'/'angle'
         return regression_rec_shape_data
 
 
@@ -546,52 +571,53 @@ class Correction(object):
         corrected_recs_list：矫正后rec列表，其中的terminal.xy_list为端子中心编号坐标
         """
         recs_list = RecdataProcess.reorder_recs(recs_list)
-        plates, terminals, corrected_terminals = [], [], []
-        for rec in recs_list:
-            assert rec.classes in ('plate', 'terminal', ), f'{rec.classes}错误'
-            if rec.classes == 'plate':
-                plates.append(rec)
+        group_list = RecdataProcess.plate_group(recs_list)
+        corrected_recs_list = []
+        for group in group_list:
+            if group[0].classes == 'plate':
+                corrected_recs_list.append(group[0])
+                terminals_list = group[1:]
             else:
-                terminals.append(rec)
-
-        terminals_xy_list = [terminal.xy_list for terminal in terminals] # terminal: Rec
-        pca_values = PCA.get_pca_values(terminals_xy_list)
-        divide_groups = PCA.divide_recs(pca_values) # divide_groups = value_groups + index_groups
-        index_groups = divide_groups['index']
-        for index_group in index_groups:
-            # 如果个数少于3个，保持原始数据
-            # 否则，通过回归矫正
-            if len(index_group) < Correction.min_terminal_cnt_to_correct:
-                for index_ in index_group:
-                    xy_list = terminals_xy_list[index_]  #pylint: disable=E1136
-                    num_xy_list = Recdata.get_text_area(xy_list)
-                    rec = Rec(num_xy_list, 'terminal')
-                    corrected_terminals.append(rec)
-            else:
-                to_correct_terminals_xy_list = [terminals_xy_list[i] for i in index_group]
-                avg_rotate_angle_H1, avg_rotate_angle_H2 = (
-                    Correction._get_avg_rotate_angle_H(to_correct_terminals_xy_list)
-                )
-                reg_shape_data = Regression.regression(
-                    to_correct_terminals_xy_list,
-                    coef=None,
-                    avg=False,
-                    independent=Correction.reg_indep_vars,
-                    dependent=Correction.reg_dep_vars,
-                )
-                for index_ in index_group:
-                    # index_group存储每组端子的序号，index_index为序号在group中的位置
-                    index_index = index_group.index(index_)
-                    shape_data = {}
-                    for key in Correction.reg_dep_vars + Correction.reg_indep_vars:
-                        shape_data[key] = reg_shape_data[key][index_index]
-                    shape_data['rotate_angle_H'] = [avg_rotate_angle_H1, avg_rotate_angle_H2]
-                    xy_list = Recdata.get_xy_list(shape_data)
-                    num_xy_list = Recdata.get_text_area(xy_list)
-                    rec = Rec(num_xy_list, 'terminal')
-                    corrected_terminals.append(rec)
-
-        corrected_recs_list = plates + corrected_terminals
+                terminals_list = group
+            terminals_xy_list = [terminal.xy_list for terminal in terminals_list]
+            pca_values = PCA.get_pca_values(terminals_xy_list)
+            divide_groups = PCA.divide_recs(pca_values)
+            index_groups = divide_groups['index']
+            for index_group in index_groups:
+                # 如果个数少于3个，保持原始数据
+                # 否则，通过回归矫正
+                if len(index_group) < Correction.min_terminal_cnt_to_correct:
+                    for index_ in index_group:
+                        xy_list = terminals_xy_list[index_]  #pylint: disable=E1136
+                        num_xy_list = Recdata.get_text_area(xy_list)
+                        # rec = Rec(num_xy_list, 'terminal')
+                        rec = Rec(xy_list, 'terminal')
+                        corrected_recs_list.append(rec)
+                else:
+                    to_correct_terminals_xy_list = [terminals_xy_list[i] for i in index_group]
+                    # 去除偏离数据
+                    avg_rotate_angle_H1, avg_rotate_angle_H2 = (
+                        Correction._get_avg_rotate_angle_H(to_correct_terminals_xy_list)
+                    )
+                    reg_shape_data = Regression.regression(
+                        to_correct_terminals_xy_list,
+                        coef=None,
+                        avg=False,
+                        independent=Correction.reg_indep_vars,
+                        dependent=Correction.reg_dep_vars,
+                    )
+                    for index_ in index_group:
+                        # index_group存储每组端子的序号，index_index为序号在group中的位置
+                        index_index = index_group.index(index_)
+                        shape_data = {}
+                        for key in Correction.reg_dep_vars + Correction.reg_indep_vars:
+                            shape_data[key] = reg_shape_data[key][index_index]
+                        shape_data['rotate_angle_H'] = [avg_rotate_angle_H1, avg_rotate_angle_H2]
+                        xy_list = Recdata.get_xy_list(shape_data)
+                        num_xy_list = Recdata.get_text_area(xy_list)
+                        # rec = Rec(num_xy_list, 'terminal')
+                        rec = Rec(xy_list, 'terminal')
+                        corrected_recs_list.append(rec)
 
         return corrected_recs_list
 
