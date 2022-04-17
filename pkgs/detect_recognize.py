@@ -79,16 +79,16 @@ class EndToEnd(object):
         group_list = RecdataProcess.plate_group(recognize_recs_list)
         group_list = db.get_terminals_id(group_list) # 生成端子id
         # 查询连接回路
-        for group in group_list:
-            if not group[0].classes == 'plate':
-                pass
-                # 显示手动输入
-            for i, rec in enumerate(group):
-                if i == 0:
-                    continue
-                terminal_id = rec.id_
-                loops_id = db.get_connected_loops_id(terminal_id)
-                for loop_id in loops_id:
-                    loop_num = db.get_loop_num(loop_id)
-                    if loop_num in loops_num:
-                        print(f'{rec.xy_list}是待检端子')
+        # for group in group_list:
+        #     if not group[0].classes == 'plate':
+        #         pass
+        #         # 显示手动输入
+        #     for i, rec in enumerate(group):
+        #         if i == 0:
+        #             continue
+        #         terminal_id = rec.id_
+        #         loops_id = db.get_connected_loops_id(terminal_id)
+        #         for loop_id in loops_id:
+        #             loop_num = db.get_loop_num(loop_id)
+        #             if loop_num in loops_num:
+        #                 print(f'{rec.xy_list}是待检端子')

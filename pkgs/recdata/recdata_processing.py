@@ -304,12 +304,14 @@ class Recdata(object):
         pass
 
     # TODO:测试shrink方法效果
+    # 基于矩形区域，按比例得到
     @staticmethod
     def get_text_area(
         xy_list,
-        W_coef=cfg.W_coef,
-        H_coef=cfg.H_coef,
-        offset_coef=cfg.offset_coef,
+        # lt_W_coef=cfg.lt_W_coef,
+        # lt_H_coef=cfg.lt_H_coef,
+        # rb_W_coef=cfg.rb_W_coef,
+        # rb_H_coef=cfg.rb_H_coef,
     ):
         """
         求取端子中心的文本（编号或铭牌信息）坐标
@@ -324,24 +326,28 @@ class Recdata(object):
         text_xy_list：文本四点坐标
         """
         # 倾斜角度±45度，弧度[-0.78, 0.78]，角度为负时，x增大；角度为正时，x减小
-        vertex = lambda center, W, H: center + W_coef * W + H_coef * H
-        _ = Recdata.get_rec_shape_data(xy_list, True, True, False, True, False)
-        center, rotate_angle, length_W = _['center'], _['rotate_angle_W'], _['length_W']
-        angle = (rotate_angle[0] + rotate_angle[1]) / 2 + EPSILON
-        length_W = 0.5 * length_W[0] + 0.5 * length_W[1]
-        offset_x = length_W * angle * offset_coef
-        # print(offset_x)
-        text_center_x, text_center_y = center[0] + offset_x, center[1]
-        text_center = np.array([text_center_x, text_center_y])
+        # vertex = lambda center, W, H: center + W_coef * W + H_coef * H
+        # _ = Recdata.get_rec_shape_data(xy_list, True, True, False, True, False)
+        # center, rotate_angle, length_W = _['center'], _['rotate_angle_W'], _['length_W']
+        # angle = (rotate_angle[0] + rotate_angle[1]) / 2 + EPSILON
+        # length_W = 0.5 * length_W[0] + 0.5 * length_W[1]
+        # offset_x = length_W * angle * offset_coef
+        # # print(offset_x)
+        # text_center_x, text_center_y = center[0] + offset_x, center[1]
+        # text_center = np.array([text_center_x, text_center_y])
 
-        W1, W2, H1, H2 = Recdata.get_four_edge_vectors(xy_list, return_array=True)
-        rt = vertex(text_center, +W1, +H2)  #pylint: disable=E1130
-        lt = vertex(text_center, -W1, +H1)  #pylint: disable=E1130
-        lb = vertex(text_center, -W2, -H1)  #pylint: disable=E1130
-        rb = vertex(text_center, +W1, -H1)  #pylint: disable=E1130
-        text_area = [rt[0], rt[1], lt[0], lt[1], lb[0], lb[1], rb[0], rb[1]]
+        # W1, W2, H1, H2 = Recdata.get_four_edge_vectors(xy_list, return_array=True)
+        # rt = vertex(text_center, +W1, +H2)  #pylint: disable=E1130
+        # lt = vertex(text_center, -W1, +H1)  #pylint: disable=E1130
+        # lb = vertex(text_center, -W2, -H1)  #pylint: disable=E1130
+        # rb = vertex(text_center, +W1, -H1)  #pylint: disable=E1130
+        # text_area = [rt[0], rt[1], lt[0], lt[1], lb[0], lb[1], rb[0], rb[1]]
 
-        return text_area
+        # _ = Recdata.get_rec_shape_data(xy_list, True, True, True, False, False)
+        # center = _['center']
+
+        pass
+        # return text_area
 
 
 class RecdataProcess(object):

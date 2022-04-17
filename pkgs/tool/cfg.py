@@ -32,7 +32,11 @@ max_joint_img_width = 1000
 joint_img_height = 60
 img_rec_height = 40
 spacing = 30
-threshold = True
+threshold = False
+lt_W_coef = 0.25
+lt_H_coef = 0.38
+rb_W_coef = 0.16
+rb_H_coef = 0.28
 
 # tool
 # UiTool

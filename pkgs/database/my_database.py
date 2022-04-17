@@ -59,7 +59,7 @@ class Task(BaseModel):
     检测任务表
     """
     id_ = IntegerField(primary_key=True) # 主码
-    type_ = CharField(column_name='type') # 任务类型
+    type_ = CharField(column_name='type') # 任务类型，感觉可以不要
     deliver_time = DateTimeField() # 任务下发时间
 
 
@@ -128,7 +128,8 @@ class Connection(BaseModel):
     # 连接电缆，cable：'KVV-4X1.5'
     # 连接屏外/屏内回路，out_cubicle_loop，in_cubicle_loop：'A411'
     # 连接屏内元件-端子，in_cubicle_component：元件id+元件接线端子，'元件id, 2位接线端子'，端子可以为空
-    # 连接屏内端子，in_cubicle_terminal：端子id
+    # 连接屏内端子，in_cubicle_terminal：端子id，这一类应该不存在吧。
+    # 连接端子排端子，
     target = CharField()
 
     class Meta:  #pylint: disable=R0903,C0115

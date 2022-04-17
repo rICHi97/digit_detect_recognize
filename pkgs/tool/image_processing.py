@@ -43,10 +43,15 @@ class ImageProcess(object):
     用于处理图片
     """
     # TODO：仅裁切数字部分
-    # TODO:尝试使用透视变换替代当前的旋转变换
     @staticmethod
     def crop_rec(
-        img, xy_list, coef_x_len=cfg.coef_x_len, coef_y_len=cfg.coef_y_len
+        img,
+        xy_list,
+        classes,
+        lt_W_coef=cfg.lt_W_coef,
+        lt_H_coef=cfg.lt_H_coef,
+        rb_W_coef=cfg.rb_W_coef,
+        rb_H_coef=cfg.rb_H_coef,
     ):
         """
         根据rec四点坐标，旋转图片从而裁切一个平置矩形
@@ -59,61 +64,49 @@ class ImageProcess(object):
         ----------
         rec_img：裁切的端子图片，经过旋转
         """
-        # 选择较长的一组对边中最大的倾斜角作为rec倾斜角
-        img = _get_img(img).convert('RGB')
-        img = np.asarray(img, 'f')
-        img.flags.writeable = True
-        # TODO：degree_用弧度表示，projection_lenth_可以去掉转弧度过程
-        length_ = lambda vector: np.linalg.norm(vector)  #pylint: disable=W0108
-        degree_ = lambda vector: math.degrees(math.atan(vector[1] / vector[0] + EPSILON))
-        projection_length_ = lambda weight_sin, weight_cos, degree: (
-            int(weight_sin * abs(math.sin(math.radians(degree)))) +
-            int(weight_cos * abs(math.cos(math.radians(degree))))
-        )
+        img_array = np.asarray(img, 'f')
+        img_w, img_h = img.size
+        xy_list = RecdataProcess.reorder_rec(xy_list)
+        # 找4组对应点
+        src = np.array(xy_list, dtype=np.float32).reshape((4, 2))
+        _ = Recdata.get_rec_shape_data(xy_list, False, True, True, False, False)
+        w = max(_['length_W'][0], _['length_W'][1])
+        h = max(_['length_H'][0], _['length_H'][1])
+        vector_W, vector_H = np.array((w, 0)), np.array((0, h))
+        left_top = np.array(xy_list).reshape((4, 2))[1]
+        right_top = left_top + vector_W
+        left_bottom = left_top + vector_H
+        right_bottom = left_top + vector_W + vector_H
 
-        # xy_list = Recdata.get_text_area(xy_list)
-        # TODO：得到端子中心的文本部分
-        W1, W2, H1, H2 = Recdata.get_four_edge_vectors(xy_list)
-        if max(length_(W1), length_(W2)) > max(length_(H1), length_(H2)):
-            degree = degree_(W1) if abs(degree_(W1)) > abs(degree_(W2)) else degree_(W2)
-        else:
-            V = H1 if abs(degree_(H1)) > abs(degree_(H2)) else H2
-            degree = degree_(V)
-            degree = -90 + degree if np.sign(degree) > 0 else 90 + degree
-        height, width = img.shape[:2]
-        mat_rotation = cv2.getRotationMatrix2D((width / 2, height / 2), degree, 1)  #pylint: disable=E1101
-        height_new, width_new = (
-            projection_length_(width, height, degree), projection_length_(height, width, degree)
-        )
-        # 拓展宽高
-        # matr_rotation[0, 2] = delta_x, mat_rotation[1, 2] = delta_y
-        mat_rotation[0, 2] += (width_new - width) / 2
-        mat_rotation[1, 2] += (height_new - height) / 2
-        img_rotation = cv2.warpAffine(  #pylint: disable=E1101
-            img, mat_rotation, (width_new, height_new), borderValue=(255, 255, 255),
-        )
-        img_rotation = np.uint8(img_rotation)
-        img_rotation = Image.fromarray(img_rotation)
+        dst = np.zeros((4, 2), dtype=np.float32)
+        dst[0] = right_top
+        dst[1] = left_top
+        dst[2] = left_bottom
+        dst[3] = right_bottom
 
-        # rt = right top, lb = left bottom
-        xy_list = RecdataProcess.from_18_to_42(xy_list)
-        rt, lb = list(xy_list[0]), list(xy_list[2])
-        rt_new = np.dot(mat_rotation, np.array([rt[0], rt[1], 1]))
-        lb_new = np.dot(mat_rotation, np.array([lb[0], lb[1], 1]))
-        x_len, y_len = (
-            int(coef_x_len * abs(rt_new[0] - lb_new[0])),
-            int(coef_y_len * abs(rt_new[1] - lb_new[1])),
+        M = cv2.getPerspectiveTransform(src, dst)
+        img_perspective_array = cv2.warpPerspective(
+            img_array, M, dsize=(img_w, img_h), borderValue=(0, 0, 0)
         )
-        # TODO：限制范围避免超出，还要研究
-        # 我觉得rt应该是min(x, 宽度),max(y, 1)；
-        rt_new = [max(1, int(rt_new[0] + x_len)), max(1, int(rt_new[1] - y_len))]
-        lb_new = [
-            min(width_new - 1, int(lb_new[0] - x_len)), min(height_new - 1, int(lb_new[1] + y_len))
-        ]
-        rec_box = [lb_new[0], rt_new[1], rt_new[0], lb_new[1]]
-        img_rec = img_rotation.crop(rec_box).convert('L')
+        img_perspective = Image.fromarray(np.uint8(img_perspective_array))
+        if classes == 'plate':
+            rec_box = [left_top[0], left_top[1], right_bottom[0], right_bottom[1]]
+            rec = img_perspective.crop(rec_box).convert('L')
 
-        return img_rec
+        elif classes == 'terminal':
+            r_w, r_h = right_bottom[0] - left_top[0], right_bottom[1] - left_top[1]
+            r_center_x, r_center_y = (
+                0.5 * (left_top[0] + right_bottom[0]), 0.5 * (left_top[1] + right_bottom[1])
+            )
+            text_box = (
+                r_center_x - lt_W_coef * r_w,
+                r_center_y - lt_H_coef * r_h,
+                r_center_x + rb_W_coef * r_w,
+                r_center_y + rb_H_coef * r_h,
+            )
+            rec = img_perspective.crop(text_box).convert('L')
+
+        return rec
 
     # TODO：裁切铭牌无效
     # 2/4，传递数据使用recs_list，之前的似乎有问题，每个plate直接return，计数cnt始终等于0
@@ -162,16 +155,17 @@ class ImageProcess(object):
 
         for rec in recs_list:
 
-            img_rec = ImageProcess.crop_rec(img, rec.xy_list)
+            img_rec = ImageProcess.crop_rec(img, rec.xy_list, rec.classes)
             assert not img_rec.width * img_rec.height == 0, (f'{rec.xy_list}裁切宽高应大于0')
-
             if rec.classes == 'plate':
+                img_rec = ImageProcess.preprocess_img(img_rec, terminal=False)
                 img_rec.save(path.join(this_joint_img_dir, f'plate_{plate_cnt}.jpg'))
                 joint_data[f'plate_{plate_cnt}.jpg'] = [rec]
                 plate_cnt += 1
 
             elif rec.classes == 'terminal':
                 # 仅terminal需要resize拼接
+                img_rec = ImageProcess.preprocess_img(img_rec, terminal=True)
                 img_rec = img_rec.resize(
                     (int(img_rec.width * img_rec_height / img_rec.height), img_rec_height)
                 )
@@ -198,7 +192,8 @@ class ImageProcess(object):
     @staticmethod
     def preprocess_img(
         img,
-        threshold=cfg.threshold,
+        threshold=False,
+        terminal=True,
     ):
         """
         Parameters
@@ -210,10 +205,14 @@ class ImageProcess(object):
         img_out = np.zeros(img_in.shape, np.uint8)
         # 归一化
         cv2.normalize(img_in, img_out, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
-        if threshold:
-            blur = cv2.GaussianBlur(img_out, (3, 3), 0)
-            _, img_out = cv2.threshold(blur, 118, 255, cv2.THRESH_TOZERO + cv2.THRESH_OTSU) # 返回：阈值，thres图片
-        img_rec = Image.fromarray(img_out.astype(np.int32))
+        if terminal:
+            if threshold:
+                img_out = cv2.GaussianBlur(img_out, (1, 1), 0)
+                # 返回：阈值，thres图片
+                _, img_out = cv2.threshold(img_out, 118, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                kernel = np.ones((2, 2), np.uint8)
+                img_out = cv2.dilate(img_out, kernel, iterations=1)
+        img_rec = Image.fromarray(img_out.astype(np.uint8))
 
         return img_rec
 
